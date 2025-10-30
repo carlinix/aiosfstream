@@ -1,452 +1,230 @@
-from collections.abc import Iterable
-
-from asynctest import TestCase, mock
-
-from aiocometd.exceptions import ServerError, AiocometdException
-
-from aiosfstream.client import Client, COMETD_PATH, API_VERSION, \
-    SalesforceStreamingClient, ReplayMarkerStoragePolicy
-from aiosfstream.auth import AuthenticatorBase
-from aiosfstream.replay import ReplayMarkerStorage, MappingStorage, \
-    ConstantReplayId, ReplayOption
-from aiosfstream.exceptions import AiosfstreamException
-
-
-class TestGetCometdUrl(TestCase):
-    def test_get(self):
-        instance_url = "instance"
-
-        result = Client.get_cometd_url(instance_url)
-
-        self.assertEqual(result,
-                         instance_url + "/" + COMETD_PATH + "/" + API_VERSION)
-
-
-class TestClient(TestCase):
-    def setUp(self):
-        self.authenticator = mock.create_autospec(AuthenticatorBase)
-        self.client = Client(self.authenticator)
-
-    def make_asyncgen(self, return_value=None):
-        """Returns an asynchronous generator yielding the items of the
-        *return_value* if it's an iterable or raising it if it's an exception
-        """
-        async def async_gen(*args, **kwargs):
-            if isinstance(return_value, Exception):
-                raise return_value
-            if isinstance(return_value, Iterable):
-                for item in return_value:
-                    yield item
-        return async_gen
-
-    def test_init(self):
-        connection_timeout = 20
-        max_pending_count = 1
-        json_dumps = object()
-        json_loads = object()
-        replay_storage_policy = object()
-
-        with self.assertLogs("aiosfstream.client", "DEBUG") as log:
-            client = Client(self.authenticator,
-                            connection_timeout=connection_timeout,
-                            max_pending_count=max_pending_count,
-                            replay_storage_policy=replay_storage_policy,
-                            json_dumps=json_dumps,
-                            json_loads=json_loads,
-                            )
-
-        self.assertEqual(client.url, "")
-        self.assertEqual(client.auth, self.authenticator)
-        self.assertEqual(client.connection_timeout, connection_timeout)
-        self.assertEqual(client._max_pending_count, max_pending_count)
-        self.assertEqual(client._json_dumps, json_dumps)
-        self.assertEqual(client._json_loads, json_loads)
-        self.assertEqual(log.output,
-                         ["DEBUG:aiosfstream.client:"
-                          "Client created with replay storage: {!r}, "
-                          "replay fallback: {!r}"
-                          .format(client.replay_storage,
-                                  client.replay_fallback)])
-        self.assertEqual(client.replay_storage_policy, replay_storage_policy)
-        self.assertEqual(client.auth.json_dumps, json_dumps)
-        self.assertEqual(client.auth.json_loads, json_loads)
-
-    @mock.patch("aiosfstream.client.CometdClient.__init__")
-    def test_init_translates_errors(self, super_init):
-        super_init.side_effect = AiocometdException()
-
-        with self.assertRaises(AiosfstreamException):
-            Client(self.authenticator)
-
-    def test_init_verifies_authenticator(self):
-        with self.assertRaisesRegex(TypeError,
-                                    f"authenticator should be an instance of "
-                                    f"{AuthenticatorBase.__name__}."):
-            Client(object())
-
-    def test_init_verifies_replay(self):
-        with self.assertRaisesRegex(TypeError,
-                                    "'str' is not a valid type for the replay "
-                                    "parameter."):
-            Client(self.authenticator, replay="fake")
-
-    @mock.patch("aiosfstream.client.Client.create_replay_storage")
-    def test_init_creates_replay_storage(self, create_replay_storage):
-        replay_param = object()
-        create_replay_storage.return_value = mock.create_autospec(
-            ReplayMarkerStorage
-        )()
-
-        client = Client(self.authenticator,
-                        replay=replay_param)
-
-        self.assertEqual(client.auth, self.authenticator)
-        self.assertEqual(client.extensions,
-                         [create_replay_storage.return_value])
-        self.assertEqual(client.replay_storage,
-                         create_replay_storage.return_value)
-        self.assertIsNone(client.replay_fallback)
-        create_replay_storage.assert_called_with(replay_param)
-
-    @mock.patch("aiosfstream.client.CometdClient.open")
-    @mock.patch("aiosfstream.client.Client.get_cometd_url")
-    async def test_open(self, get_cometd_url, super_open):
-        get_cometd_url.return_value = "url"
-        self.authenticator.instance_url = "instance_url"
-
-        with self.assertLogs("aiosfstream.client", "DEBUG") as log:
-            await self.client.open()
-
-        self.authenticator.authenticate.assert_called()
-        self.assertEqual(self.client.url, get_cometd_url.return_value)
-        super_open.assert_called()
-        self.assertEqual(log.output,
-                         ["DEBUG:aiosfstream.client:"
-                          "Authenticating using {!r}."
-                          .format(self.client.auth),
-                          "INFO:aiosfstream.client:"
-                          "Successful authentication. Instance URL: {!r}."
-                          .format(self.client.auth.instance_url)])
-
-    @mock.patch("aiosfstream.client.CometdClient.open")
-    @mock.patch("aiosfstream.client.Client.get_cometd_url")
-    async def test_open_translates_errors(self, get_cometd_url, super_open):
-        get_cometd_url.return_value = "url"
-        self.authenticator.instance_url = "instance_url"
-        super_open.side_effect = AiocometdException()
-
-        with self.assertRaises(AiosfstreamException):
-            await self.client.open()
-
-    @mock.patch("aiosfstream.client.CometdClient.close")
-    async def test_close(self, super_close):
-        await self.client.close()
-
-        super_close.assert_called()
-
-    @mock.patch("aiosfstream.client.CometdClient.close")
-    async def test_close_translates_errors(self, super_close):
-        super_close.side_effect = AiocometdException()
-
-        with self.assertRaises(AiosfstreamException):
-            await self.client.close()
-
-    @mock.patch("aiosfstream.client.CometdClient.subscribe")
-    async def test_subscribe_successful(self, super_subscribe):
-        channel = "/foo/bar"
-
-        await self.client.subscribe(channel)
-
-        super_subscribe.assert_called_with(channel)
-
-    @mock.patch("aiosfstream.client.CometdClient.subscribe")
-    async def test_subscribe_error_with_fallback_and_storage(self,
-                                                             super_subscribe):
-        channel = "/foo/bar"
-        self.client.replay_fallback = object()
-        self.client.replay_storage = mock.MagicMock()
-        error = ServerError("message", {"error": "400::server_message"})
-        super_subscribe.side_effect = [error, None]
-
-        with self.assertLogs("aiosfstream.client", "WARNING") as log:
-            await self.client.subscribe(channel)
-
-        super_subscribe.assert_has_calls([mock.call(channel)] * 2)
-        self.assertEqual(self.client.replay_storage.replay_fallback,
-                         self.client.replay_fallback)
-        self.assertEqual(log.output,
-                         ["WARNING:aiosfstream.client:"
-                          "Subscription failed with message: {!r}, "
-                          "retrying subscription with {!r}."
-                          .format("server_message",
-                                  self.client.replay_fallback)])
-
-    @mock.patch("aiosfstream.client.CometdClient.subscribe")
-    async def test_subscribe_error_without_fallback_and_storage(
-            self, super_subscribe):
-        channel = "/foo/bar"
-        self.client.replay_fallback = None
-        self.client.replay_storage = mock.MagicMock()
-        self.client.replay_storage.replay_fallback = None
-        error = ServerError("message", {"error": "400::"})
-        super_subscribe.side_effect = [error, None]
-
-        with self.assertRaises(ServerError):
-            await self.client.subscribe(channel)
-
-        super_subscribe.assert_called_with(channel)
-        self.assertIsNone(self.client.replay_storage.replay_fallback)
-
-    @mock.patch("aiosfstream.client.CometdClient.subscribe")
-    async def test_subscribe_error_with_fallback_without_storage(
-            self, super_subscribe):
-        channel = "/foo/bar"
-        self.client.replay_fallback = object()
-        self.client.replay_storage = None
-        error = ServerError("message", {"error": "400::"})
-        super_subscribe.side_effect = [error, None]
-
-        with self.assertRaises(ServerError):
-            await self.client.subscribe(channel)
-
-        super_subscribe.assert_called_with(channel)
-
-    @mock.patch("aiosfstream.client.CometdClient.subscribe")
-    async def test_subscribe_different_error_with_fallback_and_storage(
-            self, super_subscribe):
-        channel = "/foo/bar"
-        self.client.replay_fallback = object()
-        self.client.replay_storage = mock.MagicMock()
-        self.client.replay_storage.replay_fallback = None
-        error = ServerError("message", {"error": "401::"})
-        super_subscribe.side_effect = [error, None]
-
-        with self.assertRaises(ServerError):
-            await self.client.subscribe(channel)
-
-        super_subscribe.assert_called_with(channel)
-        self.assertIsNone(self.client.replay_storage.replay_fallback)
-
-    @mock.patch("aiosfstream.client.CometdClient.subscribe")
-    async def test_subscribe_translates_errors(self, super_subscribe):
-        super_subscribe.side_effect = AiocometdException()
-        channel = "/foo/bar"
-
-        with self.assertRaises(AiosfstreamException):
-            await self.client.subscribe(channel)
-
-        super_subscribe.assert_called_with(channel)
-
-    @mock.patch("aiosfstream.client.CometdClient.unsubscribe")
-    async def test_unsubscribe(self, super_unsubscribe):
-        channel = "/foo/bar"
-
-        await self.client.unsubscribe(channel)
-
-        super_unsubscribe.assert_called_with(channel)
-
-    @mock.patch("aiosfstream.client.CometdClient.unsubscribe")
-    async def test_unsubscribe_translates_errors(self, super_unsubscribe):
-        super_unsubscribe.side_effect = AiocometdException()
-        channel = "/foo/bar"
-
-        with self.assertRaises(AiosfstreamException):
-            await self.client.unsubscribe(channel)
-
-        super_unsubscribe.assert_called_with(channel)
-
-    @mock.patch("aiosfstream.client.CometdClient.publish")
-    async def test_publish(self, super_publish):
-        channel = "/foo/bar"
-        super_publish.return_value = object()
-        data = object()
-
-        result = await self.client.publish(channel, data)
-
-        self.assertEqual(result, super_publish.return_value)
-        super_publish.assert_called_with(channel, data)
-
-    @mock.patch("aiosfstream.client.CometdClient.publish")
-    async def test_publish_translates_errors(self, super_publish):
-        super_publish.side_effect = AiocometdException()
-        channel = "/foo/bar"
-        data = object()
-
-        with self.assertRaises(AiosfstreamException):
-            await self.client.publish(channel, data)
+import pytest
+import reprlib
+from http import HTTPStatus
+from unittest.mock import AsyncMock, MagicMock, patch
+from aiohttp.client_exceptions import ClientError
 
-        super_publish.assert_called_with(channel, data)
+from aiosfstream.auth import (
+    AuthenticatorBase,
+    PasswordAuthenticator,
+    RefreshTokenAuthenticator,
+    TOKEN_URL,
+    SANDBOX_TOKEN_URL,
+)
+from aiosfstream.exceptions import AuthenticationError
 
-    @mock.patch("aiosfstream.client.CometdClient.receive")
-    async def test_receive(self, super_receive):
-        super_receive.return_value = object()
-        self.client.replay_storage.extract_replay_id = mock.CoroutineMock()
 
-        result = await self.client.receive()
+class Authenticator(AuthenticatorBase):
+    async def _authenticate(self):
+        return {}
 
-        self.assertEqual(result, super_receive.return_value)
-        super_receive.assert_called()
-        self.client.replay_storage.extract_replay_id.assert_called_with(
-            super_receive.return_value
-        )
 
-    @mock.patch("aiosfstream.client.CometdClient.receive")
-    async def test_receive_doesn_extracts_replay_id_on_manual_policy(
-            self, super_receive):
-        super_receive.return_value = object()
-        client = Client(self.authenticator,
-                        replay_storage_policy=ReplayMarkerStoragePolicy.MANUAL)
-        client.replay_storage.extract_replay_id = mock.CoroutineMock()
+@pytest.fixture
+def authenticator():
+    return Authenticator()
 
-        result = await client.receive()
 
-        self.assertEqual(result, super_receive.return_value)
-        super_receive.assert_called()
-        client.replay_storage.extract_replay_id.assert_not_called()
+# ---------------------------------------------------------------------
+#  AuthenticatorBase tests
+# ---------------------------------------------------------------------
 
-    @mock.patch("aiosfstream.client.CometdClient.receive")
-    async def test_receive_translates_errors(self, super_receive):
-        super_receive.side_effect = AiocometdException()
+def test_init():
+    jd, jl = object(), object()
+    auth = Authenticator(json_dumps=jd, json_loads=jl)
+    assert auth.json_dumps is jd
+    assert auth.json_loads is jl
 
-        with self.assertRaises(AiosfstreamException):
-            await self.client.receive()
 
-        super_receive.assert_called()
+@pytest.mark.asyncio
+async def test_outgoing_sets_header(authenticator):
+    authenticator.token_type = "Bearer"
+    authenticator.access_token = "token"
+    headers = {}
 
-    async def test_aiter(self):
-        expected_result = [1, 2, 3]
+    await authenticator.outgoing([], headers)
+    assert headers["Authorization"] == "Bearer token"
 
-        with mock.patch("aiosfstream.client.CometdClient.__aiter__",
-                        self.make_asyncgen(expected_result)):
-            result = [item async for item in self.client]
 
-        self.assertEqual(result, expected_result)
+@pytest.mark.asyncio
+async def test_outgoing_without_auth_raises(authenticator):
+    with pytest.raises(AuthenticationError, match="without authenticating"):
+        await authenticator.outgoing([], {})
 
-    async def test_aiter_translates_errors(self):
-        with mock.patch("aiosfstream.client.CometdClient.__aiter__",
-                        self.make_asyncgen(AiocometdException())):
-            with self.assertRaises(AiosfstreamException):
-                await self.client.__aiter__().__anext__()
-
-    @mock.patch("aiosfstream.client.CometdClient.__aenter__")
-    async def test_aenter(self, super_aenter):
-        super_aenter.return_value = object()
-
-        result = await self.client.__aenter__()
-
-        self.assertEqual(result, super_aenter.return_value)
-        super_aenter.assert_called()
-
-    @mock.patch("aiosfstream.client.CometdClient.__aenter__")
-    async def test_aenter_translates_errors(self, super_aenter):
-        super_aenter.side_effect = AiocometdException()
-
-        with self.assertRaises(AiosfstreamException):
-            await self.client.__aenter__()
-
-        super_aenter.assert_called()
-
-    @mock.patch("aiosfstream.client.CometdClient.__aexit__")
-    async def test_aexit(self, super_aexit):
-        super_aexit.return_value = object()
-        args = [1, 2, 3]
-
-        result = await self.client.__aexit__(*args)
-
-        self.assertEqual(result, super_aexit.return_value)
-        super_aexit.assert_called_with(*args)
-
-    @mock.patch("aiosfstream.client.CometdClient.__aexit__")
-    async def test_aexit_translates_errors(self, super_aexit):
-        super_aexit.side_effect = AiocometdException()
-        args = [1, 2, 3]
-
-        with self.assertRaises(AiosfstreamException):
-            await self.client.__aexit__(*args)
-
-        super_aexit.assert_called_with(*args)
-
-
-class TestCreateReplayStorage(TestCase):
-    def test_returns_replay_storage(self):
-        replay = mock.create_autospec(ReplayMarkerStorage)()
-
-        result = Client.create_replay_storage(replay)
-
-        self.assertIs(result, replay)
-
-    def test_returns_mapping_storage_for_dict(self):
-        replay = {}
-
-        result = Client.create_replay_storage(replay)
-
-        self.assertIsInstance(result, MappingStorage)
-        self.assertIs(result.mapping, replay)
-
-    def test_returns_constant_replay_id_storage_for_replay_option(self):
-        replay = ReplayOption.ALL_EVENTS
-
-        result = Client.create_replay_storage(replay)
-
-        self.assertIsInstance(result, ConstantReplayId)
-        self.assertIs(result.default_id, replay)
-
-    def test_returns_none_for_invalid_param(self):
-        replay = 5
-
-        result = Client.create_replay_storage(replay)
-
-        self.assertIsNone(result)
-
-
-class TestSalesforceStreamingClient(TestCase):
-    @mock.patch("aiosfstream.client.PasswordAuthenticator")
-    @mock.patch("aiosfstream.client.Client.__init__")
-    def test_init(self, super_init, authenticator_cls):
-        consumer_key = "key"
-        consumer_secret = "secret"
-        username = "username"
-        password = "password"
-        replay = object()
-        replay_fallback = object()
-        replay_storage_policy = object()
-        connection_timeout = 1
-        max_pending_count = 2
-        json_dumps = object()
-        json_loads = object()
-        sandbox_enabled = True
-
-        SalesforceStreamingClient(
-            consumer_key=consumer_key,
-            consumer_secret=consumer_secret,
-            username=username,
-            password=password,
-            replay=replay,
-            replay_fallback=replay_fallback,
-            replay_storage_policy=replay_storage_policy,
-            connection_timeout=connection_timeout,
-            max_pending_count=max_pending_count,
-            sandbox=sandbox_enabled,
-            json_dumps=json_dumps,
-            json_loads=json_loads,
-        )
-
-        authenticator_cls.assert_called_with(
-            consumer_key=consumer_key,
-            consumer_secret=consumer_secret,
-            username=username,
-            password=password,
-            sandbox=sandbox_enabled,
-            json_dumps=json_dumps,
-            json_loads=json_loads,
-        )
-        super_init.assert_called_with(
-            authenticator_cls.return_value,
-            replay=replay,
-            replay_fallback=replay_fallback,
-            replay_storage_policy=replay_storage_policy,
-            connection_timeout=connection_timeout,
-            max_pending_count=max_pending_count,
-            json_dumps=json_dumps,
-            json_loads=json_loads,
-        )
+
+@pytest.mark.asyncio
+async def test_authenticate_success(monkeypatch, authenticator):
+    response = {
+        "id": "id_url",
+        "issued_at": "1278448832702",
+        "instance_url": "https://yourInstance.salesforce.com/",
+        "signature": "signature_value",
+        "access_token": "token",
+        "token_type": "Bearer",
+    }
+    status = HTTPStatus.OK
+    authenticator._authenticate = AsyncMock(return_value=(status, response))
+
+    await authenticator.authenticate()
+
+    assert authenticator.id == response["id"]
+    assert authenticator.issued_at == response["issued_at"]
+    assert authenticator.instance_url == response["instance_url"]
+    assert authenticator.signature == response["signature"]
+    assert authenticator.access_token == response["access_token"]
+    assert authenticator.token_type == response["token_type"]
+
+
+@pytest.mark.asyncio
+async def test_authenticate_non_ok_status_code(authenticator):
+    response = {"access_token": "bad"}
+    authenticator._authenticate = AsyncMock(return_value=(HTTPStatus.BAD_REQUEST, response))
+
+    with pytest.raises(AuthenticationError, match="Authentication failed"):
+        await authenticator.authenticate()
+
+    assert authenticator.access_token is None
+    assert authenticator.token_type is None
+
+
+@pytest.mark.asyncio
+async def test_authenticate_on_network_error(authenticator):
+    authenticator._authenticate = AsyncMock(side_effect=ClientError())
+
+    with pytest.raises(AuthenticationError, match="Network request failed"):
+        await authenticator.authenticate()
+
+    assert authenticator.access_token is None
+    assert authenticator.token_type is None
+
+
+@pytest.mark.asyncio
+async def test_incoming_noop(authenticator):
+    payload, headers = [], {}
+    await authenticator.incoming(payload, headers)
+    assert not payload
+    assert not headers
+
+
+def test_token_url_non_sandbox():
+    assert Authenticator()._token_url == TOKEN_URL
+
+
+def test_token_url_sandbox():
+    assert Authenticator(sandbox=True)._token_url == SANDBOX_TOKEN_URL
+
+
+# ---------------------------------------------------------------------
+#  PasswordAuthenticator tests
+# ---------------------------------------------------------------------
+
+@pytest.fixture
+def password_auth():
+    return PasswordAuthenticator(
+        consumer_key="id",
+        consumer_secret="secret",
+        username="username",
+        password="password",
+    )
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_password_authenticate(mock_session, password_auth):
+    status = object()
+    response_data = {"ok": True}
+    response_obj = MagicMock()
+    response_obj.json = AsyncMock(return_value=response_data)
+    response_obj.status = status
+
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock()
+    session.post = AsyncMock(return_value=response_obj)
+    mock_session.return_value = session
+
+    result = await password_auth._authenticate()
+
+    assert result == (status, response_data)
+    mock_session.assert_called_with(json_serialize=password_auth.json_dumps)
+    session.post.assert_awaited_with(
+        password_auth._token_url,
+        data={
+            "grant_type": "password",
+            "client_id": password_auth.client_id,
+            "client_secret": password_auth.client_secret,
+            "username": password_auth.username,
+            "password": password_auth.password,
+        },
+    )
+    response_obj.json.assert_awaited_with(loads=password_auth.json_loads)
+    session.__aenter__.assert_awaited()
+    session.__aexit__.assert_awaited()
+
+
+def test_password_repr(password_auth):
+    result = repr(password_auth)
+    cls = type(password_auth).__name__
+    a = password_auth
+    assert result == (
+        f"{cls}(consumer_key={reprlib.repr(a.client_id)},"
+        f"consumer_secret={reprlib.repr(a.client_secret)}, "
+        f"username={reprlib.repr(a.username)}, "
+        f"password={reprlib.repr(a.password)})"
+    )
+
+
+# ---------------------------------------------------------------------
+#  RefreshTokenAuthenticator tests
+# ---------------------------------------------------------------------
+
+@pytest.fixture
+def refresh_auth():
+    return RefreshTokenAuthenticator(
+        consumer_key="id",
+        consumer_secret="secret",
+        refresh_token="refresh_token",
+    )
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_refresh_token_authenticate(mock_session, refresh_auth):
+    status = object()
+    response_data = {"ok": True}
+    response_obj = MagicMock()
+    response_obj.json = AsyncMock(return_value=response_data)
+    response_obj.status = status
+
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock()
+    session.post = AsyncMock(return_value=response_obj)
+    mock_session.return_value = session
+
+    result = await refresh_auth._authenticate()
+
+    assert result == (status, response_data)
+    mock_session.assert_called_with(json_serialize=refresh_auth.json_dumps)
+    session.post.assert_awaited_with(
+        refresh_auth._token_url,
+        data={
+            "grant_type": "refresh_token",
+            "client_id": refresh_auth.client_id,
+            "client_secret": refresh_auth.client_secret,
+            "refresh_token": refresh_auth.refresh_token,
+        },
+    )
+    response_obj.json.assert_awaited_with(loads=refresh_auth.json_loads)
+    session.__aenter__.assert_awaited()
+    session.__aexit__.assert_awaited()
+
+
+def test_refresh_repr(refresh_auth):
+    result = repr(refresh_auth)
+    cls = type(refresh_auth).__name__
+    a = refresh_auth
+    assert result == (
+        f"{cls}(consumer_key={reprlib.repr(a.client_id)},"
+        f"consumer_secret={reprlib.repr(a.client_secret)}, "
+        f"refresh_token={reprlib.repr(a.refresh_token)})"
+    )

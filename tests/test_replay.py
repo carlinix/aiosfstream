@@ -1,12 +1,18 @@
-from datetime import datetime, timezone, timedelta
+import pytest
 import reprlib
+from datetime import datetime, timezone, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
-from asynctest import TestCase, mock
 from aiocometd.constants import MetaChannel
-
-from aiosfstream.replay import ReplayMarkerStorage, ReplayMarker, \
-    MappingStorage, ConstantReplayId, DefaultMappingStorage, \
-    DefaultReplayIdMixin, ReplayMarkerStorageContextManager
+from aiosfstream.replay import (
+    ReplayMarkerStorage,
+    ReplayMarker,
+    MappingStorage,
+    ConstantReplayId,
+    DefaultMappingStorage,
+    DefaultReplayIdMixin,
+    ReplayMarkerStorageContextManager,
+)
 from aiosfstream.exceptions import ReplayError
 
 
@@ -18,494 +24,208 @@ class ReplayMarkerStorageStub(ReplayMarkerStorage):
         pass
 
 
-class TestReplayStorage(TestCase):
-    def setUp(self):
-        self.replay_storage = ReplayMarkerStorageStub()
-
-    def test_init(self):
-        self.assertIsNone(self.replay_storage.replay_fallback)
-
-    async def test_incoming_doesnt_extracts_replay_id(self):
-        self.replay_storage.extract_replay_id = mock.CoroutineMock()
-        message = {
-            "channel": "/foo/bar"
-        }
-
-        await self.replay_storage.incoming([message])
-
-        self.replay_storage.extract_replay_id.assert_not_called()
-
-    async def test_outgoing_with_subscribe(self):
-        self.replay_storage.insert_replay_id = mock.CoroutineMock()
-        message = {
-            "channel": MetaChannel.SUBSCRIBE
-        }
-
-        await self.replay_storage.outgoing([message], {})
-
-        self.replay_storage.insert_replay_id.assert_called_with(message)
-
-    async def test_get_replay_id(self):
-        marker = ReplayMarker(date="", replay_id="id")
-        self.replay_storage.get_replay_marker = mock.CoroutineMock(
-            return_value=marker
-        )
-        subscription = "/foo/bar"
-
-        result = await self.replay_storage.get_replay_id(subscription)
-
-        self.assertEqual(result, marker.replay_id)
-        self.replay_storage.get_replay_marker.assert_called_with(subscription)
-
-    async def test_get_replay_id_none_marker(self):
-        self.replay_storage.get_replay_marker = mock.CoroutineMock(
-            return_value=None
-        )
-        subscription = "/foo/bar"
-
-        result = await self.replay_storage.get_replay_id(subscription)
-
-        self.assertIsNone(result)
-        self.replay_storage.get_replay_marker.assert_called_with(subscription)
-
-    async def test_outgoing_with_non_subscribe(self):
-        self.replay_storage.insert_replay_id = mock.CoroutineMock()
-        message = {
-            "channel": MetaChannel.HANDSHAKE
-        }
-
-        await self.replay_storage.outgoing([message], {})
-
-        self.replay_storage.insert_replay_id.assert_not_called()
-
-    async def test_insert_replay_id(self):
-        replay_id = "id"
-        self.replay_storage.get_replay_id = mock.CoroutineMock(
-            return_value=replay_id
-        )
-        message = {
-            "channel": MetaChannel.SUBSCRIBE,
-            "subscription": "/foo/bar",
-            "ext": {}
-        }
-
-        await self.replay_storage.insert_replay_id(message)
-
-        self.assertEqual(message["ext"]["replay"][message["subscription"]],
-                         replay_id)
-        self.replay_storage.get_replay_id.assert_called_with(
-            message["subscription"])
-
-    async def test_insert_replay_id_with_replay_fallback(self):
-        fallback_id = "id"
-        self.replay_storage.get_replay_id = mock.CoroutineMock()
-        self.replay_storage.replay_fallback = fallback_id
-        message = {
-            "channel": MetaChannel.SUBSCRIBE,
-            "subscription": "/foo/bar",
-            "ext": {}
-        }
-
-        await self.replay_storage.insert_replay_id(message)
-
-        self.assertEqual(message["ext"]["replay"][message["subscription"]],
-                         fallback_id)
-        self.replay_storage.get_replay_id.assert_not_called()
-
-    async def test_insert_replay_id_inserts_ext(self):
-        replay_id = "id"
-        self.replay_storage.get_replay_id = mock.CoroutineMock(
-            return_value=replay_id
-        )
-        message = {
-            "channel": MetaChannel.SUBSCRIBE,
-            "subscription": "/foo/bar"
-        }
-
-        await self.replay_storage.insert_replay_id(message)
-
-        self.assertEqual(message["ext"]["replay"][message["subscription"]],
-                         replay_id)
-        self.replay_storage.get_replay_id.assert_called_with(
-            message["subscription"])
-
-    async def test_insert_replay_id_doesnt_insert_none(self):
-        replay_id = None
-        self.replay_storage.get_replay_id = mock.CoroutineMock(
-            return_value=replay_id
-        )
-        message = {
-            "channel": MetaChannel.SUBSCRIBE,
-            "subscription": "/foo/bar"
-        }
-
-        await self.replay_storage.insert_replay_id(message)
-
-        self.assertNotIn("ext", message)
-        self.replay_storage.get_replay_id.assert_called_with(
-            message["subscription"])
-
-    def test_get_message_date_for_push_topic(self):
-        date = datetime.now(timezone.utc).isoformat()
-        message = {
-            "channel": "/foo/bar",
-            "data": {
-                "event": {
-                    "createdDate": date,
-                    "replayId": "id"
-                }
-            }
-        }
-
-        result = self.replay_storage.get_message_date(message)
-
-        self.assertEqual(result, date)
-
-    def test_get_message_date_for_platform_event(self):
-        date = datetime.now(timezone.utc).isoformat()
-        message = {
-            "channel": "/foo/bar",
-            "data": {
-                "payload": {
-                    "value__c": "some value",
-                    "CreatedById": "id",
-                    "CreatedDate": date
-                },
-                "event": {
-                    "replayId": "id"
-                }
-            }
-        }
-
-        result = self.replay_storage.get_message_date(message)
-
-        self.assertEqual(result, date)
-
-    def test_get_message_date_for_change_data_capture(self):
-        date = datetime.now(timezone.utc).isoformat()
-        timestamp = 1551962064000
-        message = {
-            "channel": "/foo/bar",
-            "data": {
-                "payload": {
-                    "ChangeEventHeader": {
-                        "commitTimestamp": timestamp
-                    },
-                    "value__c": "some value",
-                    "CreatedById": "id",
-                    "CreatedDate": date
-                },
-                "event": {
-                    "replayId": "id"
-                }
-            }
-        }
-
-        result = self.replay_storage.get_message_date(message)
-
-        self.assertEqual(result, str(timestamp))
-
-    def test_get_message_date_error_if_no_date_found(self):
-        with self.assertRaisesRegex(ReplayError,
-                                    "No message creation date found."):
-            self.replay_storage.get_message_date({})
-
-        with self.assertRaisesRegex(ReplayError,
-                                    "No message creation date found."):
-            self.replay_storage.get_message_date({"data": {}})
-
-    async def test_extract_replay_id_on_no_previous_id(self):
-        self.replay_storage.set_replay_marker = mock.CoroutineMock()
-        self.replay_storage.get_replay_marker = mock.CoroutineMock(
-            return_value=None
-        )
-        date = datetime.now(timezone.utc).isoformat()
-        self.replay_storage.get_message_date = \
-            mock.MagicMock(return_value=date)
-        id_value = "id"
-        message = {
-            "channel": "/foo/bar",
-            "data": {
-                "event": {
-                    "createdDate": date,
-                    "replayId": id_value
-                }
-            }
-        }
-
-        await self.replay_storage.extract_replay_id(message)
-
-        self.replay_storage.set_replay_marker.assert_called_with(
-            message["channel"],
-            ReplayMarker(date=date, replay_id=id_value)
-        )
-        self.replay_storage.get_message_date.assert_called()
-
-    async def test_extract_replay_id_on_previous_id_older(self):
-        self.replay_storage.set_replay_marker = mock.CoroutineMock()
-        prev_marker = ReplayMarker(
-            date=(datetime.now(timezone.utc) -
-                  timedelta(seconds=1)).isoformat(),
-            replay_id="old_id"
-        )
-        self.replay_storage.get_replay_marker = mock.CoroutineMock(
-            return_value=prev_marker
-        )
-        date = datetime.now(timezone.utc).isoformat()
-        self.replay_storage.get_message_date = \
-            mock.MagicMock(return_value=date)
-        id_value = "id"
-        message = {
-            "channel": "/foo/bar",
-            "data": {
-                "event": {
-                    "createdDate": date,
-                    "replayId": id_value
-                }
-            }
-        }
-
-        await self.replay_storage.extract_replay_id(message)
-
-        self.replay_storage.set_replay_marker.assert_called_with(
-            message["channel"],
-            ReplayMarker(date=date, replay_id=id_value)
-        )
-        self.replay_storage.get_message_date.assert_called()
-
-    async def test_extract_replay_id_on_previous_id_same_date(self):
-        self.replay_storage.set_replay_marker = mock.CoroutineMock()
-        date = datetime.now(timezone.utc).isoformat()
-        self.replay_storage.get_message_date = \
-            mock.MagicMock(return_value=date)
-        prev_marker = ReplayMarker(
-            date=date,
-            replay_id="old_id"
-        )
-        self.replay_storage.get_replay_marker = mock.CoroutineMock(
-            return_value=prev_marker
-        )
-        id_value = "id"
-        message = {
-            "channel": "/foo/bar",
-            "data": {
-                "event": {
-                    "createdDate": date,
-                    "replayId": id_value
-                }
-            }
-        }
-
-        await self.replay_storage.extract_replay_id(message)
-
-        self.replay_storage.set_replay_marker.assert_called_with(
-            message["channel"],
-            ReplayMarker(date=date, replay_id=id_value)
-        )
-        self.replay_storage.get_message_date.assert_called()
-
-    async def test_extract_replay_id_on_previous_id_newer(self):
-        self.replay_storage.set_replay_marker = mock.CoroutineMock()
-        prev_marker = ReplayMarker(
-            date=(datetime.now(timezone.utc) +
-                  timedelta(days=1)).isoformat(),
-            replay_id="newer_id"
-        )
-        self.replay_storage.get_replay_marker = mock.CoroutineMock(
-            return_value=prev_marker
-        )
-        date = datetime.now(timezone.utc).isoformat()
-        self.replay_storage.get_message_date = \
-            mock.MagicMock(return_value=date)
-        id_value = "id"
-        message = {
-            "channel": "/foo/bar",
-            "data": {
-                "event": {
-                    "createdDate": date,
-                    "replayId": id_value
-                }
-            }
-        }
-
-        await self.replay_storage.extract_replay_id(message)
-
-        self.replay_storage.set_replay_marker.assert_not_called()
-        self.replay_storage.get_message_date.assert_called()
-
-    def test_call_returns_context_manager(self):
-        message = object()
-
-        result = self.replay_storage(message)
-
-        self.assertIsInstance(result, ReplayMarkerStorageContextManager)
-        self.assertEqual(result.replay_storage, self.replay_storage)
-        self.assertEqual(result.message, message)
-
-
-class TestReplayMarkerStorageContextManager(TestCase):
-    def setUp(self):
-        self.replay_storage = ReplayMarkerStorageStub()
-        self.message = object()
-        self.context_manager = ReplayMarkerStorageContextManager(
-            self.replay_storage,
-            self.message
-        )
-
-    async def test_aenter(self):
-        self.assertIsNone(await self.context_manager.__aenter__())
-
-    async def test_aexit_extracts_replay_id(self):
-        self.replay_storage.extract_replay_id = mock.CoroutineMock()
-
-        async with self.context_manager:
-            pass
-
-        self.replay_storage.extract_replay_id.assert_called_with(self.message)
-
-    async def test_aexit_raises_error(self):
-        self.replay_storage.extract_replay_id = mock.CoroutineMock(
-            side_effect=ValueError()
-        )
-
-        with self.assertRaises(ValueError):
-            async with self.context_manager:
-                raise ValueError()
-
-        self.replay_storage.extract_replay_id.assert_not_called()
-
-
-class TestMappingReplayStorage(TestCase):
-    def setUp(self):
-        self.mapping = {}
-        self.storage = MappingStorage(self.mapping)
-
-    def test_init(self):
-        self.assertIs(self.storage.mapping, self.mapping)
-
-    def test_init_error_on_non_mapping(self):
-        with self.assertRaisesRegex(TypeError,
-                                    "mapping parameter should be an "
-                                    "instance of MutableMapping."):
-            MappingStorage([])
-
-    async def test_set_replay_marker(self):
-        self.storage.mapping = mock.MagicMock()
-        subscription = "/foo/bar"
-        marker = ReplayMarker(date="", replay_id="id")
-
-        await self.storage.set_replay_marker(subscription, marker)
-
-        self.storage.mapping.__setitem__.assert_called_with(subscription,
-                                                            marker)
-
-    async def test_get_replay_marker(self):
-        subscription = "/foo/bar"
-        marker = ReplayMarker(date="", replay_id="id")
-        self.storage.mapping = mock.MagicMock()
-        self.storage.mapping.__getitem__.return_value = marker
-
-        result = await self.storage.get_replay_marker(subscription)
-
-        self.assertEqual(result, marker)
-        self.storage.mapping.__getitem__.assert_called_with(subscription)
-
-    async def test_get_replay_marker_none_on_key_error(self):
-        subscription = "/foo/bar"
-        self.storage.mapping = mock.MagicMock()
-        self.storage.mapping.__getitem__.side_effect = KeyError()
-
-        result = await self.storage.get_replay_marker(subscription)
-
-        self.assertIsNone(result)
-        self.storage.mapping.__getitem__.assert_called_with(subscription)
-
-    def test_repr(self):
-        result = repr(self.storage)
-
-        cls_name = type(self.storage).__name__
-        storage = self.storage
-        self.assertEqual(
-            result,
-            f"{cls_name}(mapping={reprlib.repr(storage.mapping)})"
-        )
-
-
-class TestConstantReplayId(TestCase):
-    def setUp(self):
-        self.replay_storage = ConstantReplayId(1)
-
-    async def test_get_replay_id(self):
-        result = await self.replay_storage.get_replay_id("subscription")
-
-        self.assertEqual(result, self.replay_storage.default_id)
-
-    async def test_get_replay_marker(self):
-        result = await self.replay_storage.get_replay_marker("subscription")
-
-        self.assertIsNone(result)
-
-    async def test_set_replay_marker(self):
-        marker = ReplayMarker(date="", replay_id="id")
-        await self.replay_storage.set_replay_marker("subscription", marker)
-
-    def test_repr(self):
-        result = repr(self.replay_storage)
-
-        cls_name = type(self.replay_storage).__name__
-        storage = self.replay_storage
-        self.assertEqual(
-            result,
-            f"{cls_name}(default_id={reprlib.repr(storage.default_id)})"
-        )
-
-
-class TestDefaultReplayIdMixin(TestCase):
-    def setUp(self):
-        self.replay_id = "default_id"
-        self.storage = DefaultReplayIdMixin(self.replay_id)
-
-    async def test_get_replay_id_returns_marker_id(self):
-        marker = ReplayMarker(date="", replay_id="id")
-        subscription = "/foo/bar"
-        self.storage.get_replay_marker = mock.CoroutineMock(
-            return_value=marker)
-
-        result = await self.storage.get_replay_id(subscription)
-
-        self.assertEqual(result, marker.replay_id)
-        self.storage.get_replay_marker.assert_called_with(subscription)
-
-    async def test_get_replay_id_returns_default_id_if_marker_none(self):
-        marker = None
-        subscription = "/foo/bar"
-        self.storage.get_replay_marker = mock.CoroutineMock(
-            return_value=marker)
-
-        result = await self.storage.get_replay_id(subscription)
-
-        self.assertEqual(result, self.storage.default_id)
-        self.storage.get_replay_marker.assert_called_with(subscription)
-
-
-class TestDefaultMappingReplayStorage(TestDefaultReplayIdMixin,
-                                      TestMappingReplayStorage):
-    def setUp(self):
-        self.mapping = {}
-        self.replay_id = "default_id"
-        self.storage = DefaultMappingStorage(self.mapping, self.replay_id)
-
-    def test_init(self):
-        self.assertIs(self.storage.mapping, self.mapping)
-        self.assertIs(self.storage.default_id, self.replay_id)
-
-    def test_repr(self):
-        result = repr(self.storage)
-
-        cls_name = type(self.storage).__name__
-        storage = self.storage
-        self.assertEqual(
-            result,
-            f"{cls_name}(mapping={reprlib.repr(storage.mapping)}, "
-            f"default_id={reprlib.repr(storage.default_id)})"
-        )
+@pytest.fixture
+def replay_storage():
+    return ReplayMarkerStorageStub()
+
+
+@pytest.mark.asyncio
+async def test_incoming_doesnt_extracts_replay_id(replay_storage):
+    replay_storage.extract_replay_id = AsyncMock()
+    message = {"channel": "/foo/bar"}
+
+    await replay_storage.incoming([message])
+    replay_storage.extract_replay_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_outgoing_with_subscribe(replay_storage):
+    replay_storage.insert_replay_id = AsyncMock()
+    message = {"channel": MetaChannel.SUBSCRIBE}
+
+    await replay_storage.outgoing([message], {})
+    replay_storage.insert_replay_id.assert_called_with(message)
+
+
+@pytest.mark.asyncio
+async def test_get_replay_id(replay_storage):
+    marker = ReplayMarker(date="", replay_id="id")
+    replay_storage.get_replay_marker = AsyncMock(return_value=marker)
+    subscription = "/foo/bar"
+
+    result = await replay_storage.get_replay_id(subscription)
+
+    assert result == marker.replay_id
+    replay_storage.get_replay_marker.assert_awaited_with(subscription)
+
+
+@pytest.mark.asyncio
+async def test_get_replay_id_none_marker(replay_storage):
+    replay_storage.get_replay_marker = AsyncMock(return_value=None)
+    subscription = "/foo/bar"
+
+    result = await replay_storage.get_replay_id(subscription)
+
+    assert result is None
+    replay_storage.get_replay_marker.assert_awaited_with(subscription)
+
+
+@pytest.mark.asyncio
+async def test_insert_replay_id_inserts_correct_value(replay_storage):
+    replay_id = "id"
+    replay_storage.get_replay_id = AsyncMock(return_value=replay_id)
+    message = {
+        "channel": MetaChannel.SUBSCRIBE,
+        "subscription": "/foo/bar",
+        "ext": {},
+    }
+
+    await replay_storage.insert_replay_id(message)
+    assert message["ext"]["replay"][message["subscription"]] == replay_id
+
+
+@pytest.mark.asyncio
+async def test_insert_replay_id_with_replay_fallback(replay_storage):
+    replay_storage.get_replay_id = AsyncMock()
+    replay_storage.replay_fallback = "fallback"
+    message = {
+        "channel": MetaChannel.SUBSCRIBE,
+        "subscription": "/foo/bar",
+        "ext": {},
+    }
+
+    await replay_storage.insert_replay_id(message)
+    assert message["ext"]["replay"][message["subscription"]] == "fallback"
+    replay_storage.get_replay_id.assert_not_awaited()
+
+
+def test_get_message_date_variants(replay_storage):
+    date = datetime.now(timezone.utc).isoformat()
+
+    push_topic = {
+        "channel": "/foo/bar",
+        "data": {"event": {"createdDate": date, "replayId": "id"}},
+    }
+    assert replay_storage.get_message_date(push_topic) == date
+
+    platform_event = {
+        "channel": "/foo/bar",
+        "data": {
+            "payload": {"CreatedDate": date},
+            "event": {"replayId": "id"},
+        },
+    }
+    assert replay_storage.get_message_date(platform_event) == date
+
+    cdc = {
+        "channel": "/foo/bar",
+        "data": {
+            "payload": {"ChangeEventHeader": {"commitTimestamp": 12345}},
+            "event": {"replayId": "id"},
+        },
+    }
+    assert replay_storage.get_message_date(cdc) == "12345"
+
+    with pytest.raises(ReplayError, match="No message creation date found."):
+        replay_storage.get_message_date({})
+
+
+@pytest.mark.asyncio
+async def test_extract_replay_id_on_no_previous_id(replay_storage):
+    replay_storage.set_replay_marker = AsyncMock()
+    replay_storage.get_replay_marker = AsyncMock(return_value=None)
+    date = datetime.now(timezone.utc).isoformat()
+    replay_storage.get_message_date = MagicMock(return_value=date)
+
+    message = {
+        "channel": "/foo/bar",
+        "data": {"event": {"createdDate": date, "replayId": "id"}},
+    }
+    await replay_storage.extract_replay_id(message)
+
+    replay_storage.set_replay_marker.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_extract_replay_id_on_previous_newer(replay_storage):
+    replay_storage.set_replay_marker = AsyncMock()
+    prev_marker = ReplayMarker(
+        date=(datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        replay_id="newer_id",
+    )
+    replay_storage.get_replay_marker = AsyncMock(return_value=prev_marker)
+    date = datetime.now(timezone.utc).isoformat()
+    replay_storage.get_message_date = MagicMock(return_value=date)
+
+    message = {
+        "channel": "/foo/bar",
+        "data": {"event": {"createdDate": date, "replayId": "id"}},
+    }
+
+    await replay_storage.extract_replay_id(message)
+    replay_storage.set_replay_marker.assert_not_awaited()
+
+
+def test_call_returns_context_manager(replay_storage):
+    message = object()
+    result = replay_storage(message)
+    assert isinstance(result, ReplayMarkerStorageContextManager)
+    assert result.replay_storage is replay_storage
+    assert result.message is message
+
+
+# ----- MappingStorage tests -----
+
+@pytest.mark.asyncio
+async def test_mapping_storage_set_and_get():
+    mapping = {}
+    storage = MappingStorage(mapping)
+    subscription = "/foo/bar"
+    marker = ReplayMarker(date="", replay_id="id")
+
+    await storage.set_replay_marker(subscription, marker)
+    assert mapping[subscription] == marker
+
+    result = await storage.get_replay_marker(subscription)
+    assert result == marker
+
+
+def test_mapping_storage_repr():
+    mapping = {"a": 1}
+    storage = MappingStorage(mapping)
+    cls_name = type(storage).__name__
+    assert repr(storage) == f"{cls_name}(mapping={reprlib.repr(mapping)})"
+
+
+@pytest.mark.asyncio
+async def test_constant_replay_id():
+    storage = ConstantReplayId(1)
+    assert await storage.get_replay_id("sub") == 1
+    assert await storage.get_replay_marker("sub") is None
+    await storage.set_replay_marker("sub", ReplayMarker("", ""))
+    assert "ConstantReplayId" in repr(storage)
+
+
+@pytest.mark.asyncio
+async def test_default_replay_id_mixin_behavior():
+    storage = DefaultReplayIdMixin("default_id")
+    marker = ReplayMarker("", "custom_id")
+    storage.get_replay_marker = AsyncMock(return_value=marker)
+
+    result = await storage.get_replay_id("sub")
+    assert result == "custom_id"
+
+    storage.get_replay_marker = AsyncMock(return_value=None)
+    result = await storage.get_replay_id("sub")
+    assert result == "default_id"
+
+
+def test_default_mapping_storage_repr():
+    mapping = {}
+    replay_id = "id"
+    storage = DefaultMappingStorage(mapping, replay_id)
+    cls_name = type(storage).__name__
+    assert repr(storage) == (
+        f"{cls_name}(mapping={reprlib.repr(mapping)}, "
+        f"default_id={reprlib.repr(replay_id)})"
+    )

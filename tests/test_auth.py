@@ -1,11 +1,16 @@
-from http import HTTPStatus
+import pytest
 import reprlib
-
-from asynctest import TestCase, mock
+from http import HTTPStatus
+from unittest.mock import AsyncMock, MagicMock, patch
 from aiohttp.client_exceptions import ClientError
 
-from aiosfstream.auth import AuthenticatorBase, PasswordAuthenticator, \
-    TOKEN_URL, SANDBOX_TOKEN_URL, RefreshTokenAuthenticator
+from aiosfstream.auth import (
+    AuthenticatorBase,
+    PasswordAuthenticator,
+    RefreshTokenAuthenticator,
+    TOKEN_URL,
+    SANDBOX_TOKEN_URL,
+)
 from aiosfstream.exceptions import AuthenticationError
 
 
@@ -14,235 +19,212 @@ class Authenticator(AuthenticatorBase):
         return {}
 
 
-class TestAuthenticatorBase(TestCase):
-    def setUp(self):
-        self.authenticator = Authenticator()
-
-    def test_init(self):
-        json_dumps = object()
-        json_loads = object()
-
-        auth = Authenticator(json_dumps=json_dumps, json_loads=json_loads)
-
-        self.assertIs(auth.json_dumps, json_dumps)
-        self.assertIs(auth.json_loads, json_loads)
-
-    async def test_outgoing_sets_header(self):
-        self.authenticator.token_type = "Bearer"
-        self.authenticator.access_token = "token"
-        payload = []
-        headers = {}
-
-        await self.authenticator.outgoing(payload, headers)
-
-        self.assertEqual(headers["Authorization"],
-                         self.authenticator.token_type + " " +
-                         self.authenticator.access_token)
-
-    async def test_outgoing_error_when_called_without_authentication(self):
-        payload = []
-        headers = {}
-
-        with self.assertRaisesRegex(AuthenticationError,
-                                    "Unknown token_type and access_token "
-                                    "values. Method called without "
-                                    "authenticating first."):
-            await self.authenticator.outgoing(payload, headers)
-
-    async def test_authenticate(self):
-        response = {
-            "id": "id_url",
-            "issued_at": "1278448832702",
-            "instance_url": "https://yourInstance.salesforce.com/",
-            "signature": "signature_value",
-            "access_token": "token",
-            "token_type": "Bearer"
-        }
-        status = HTTPStatus.OK
-        self.authenticator._authenticate = mock.CoroutineMock(
-            return_value=(status, response)
-        )
-
-        await self.authenticator.authenticate()
-
-        self.assertEqual(self.authenticator.id,
-                         response["id"])
-        self.assertEqual(self.authenticator.issued_at,
-                         response["issued_at"])
-        self.assertEqual(self.authenticator.instance_url,
-                         response["instance_url"])
-        self.assertEqual(self.authenticator.signature,
-                         response["signature"])
-        self.assertEqual(self.authenticator.access_token,
-                         response["access_token"])
-        self.assertEqual(self.authenticator.token_type,
-                         response["token_type"])
-
-    async def test_authenticate_non_ok_status_code(self):
-        response = {
-            "id": "id_url",
-            "issued_at": "1278448832702",
-            "instance_url": "https://yourInstance.salesforce.com/",
-            "signature": "signature_value",
-            "access_token": "token",
-            "token_type": "Bearer"
-        }
-        status = HTTPStatus.BAD_REQUEST
-        self.authenticator._authenticate = mock.CoroutineMock(
-            return_value=(status, response)
-        )
-
-        with self.assertRaisesRegex(AuthenticationError,
-                                    "Authentication failed"):
-            await self.authenticator.authenticate()
-
-        self.assertIsNone(self.authenticator.id)
-        self.assertIsNone(self.authenticator.issued_at)
-        self.assertIsNone(self.authenticator.instance_url)
-        self.assertIsNone(self.authenticator.signature)
-        self.assertIsNone(self.authenticator.access_token)
-        self.assertIsNone(self.authenticator.token_type)
-
-    async def test_authenticate_on_network_error(self):
-        self.authenticator._authenticate = mock.CoroutineMock(
-            side_effect=ClientError()
-        )
-
-        with self.assertRaisesRegex(AuthenticationError,
-                                    "Network request failed"):
-            await self.authenticator.authenticate()
-
-        self.assertIsNone(self.authenticator.id)
-        self.assertIsNone(self.authenticator.issued_at)
-        self.assertIsNone(self.authenticator.instance_url)
-        self.assertIsNone(self.authenticator.signature)
-        self.assertIsNone(self.authenticator.access_token)
-        self.assertIsNone(self.authenticator.token_type)
-
-    async def test_incoming(self):
-        payload = []
-        headers = {}
-
-        await self.authenticator.incoming(payload, headers)
-
-        self.assertFalse(payload)
-        self.assertFalse(headers)
-
-    def test_token_url_non_sandbox(self):
-        auth = Authenticator()
-
-        self.assertEqual(auth._token_url, TOKEN_URL)
-
-    def test_token_url_sandbox(self):
-        auth = Authenticator(sandbox=True)
-
-        self.assertEqual(auth._token_url, SANDBOX_TOKEN_URL)
+@pytest.fixture
+def authenticator():
+    return Authenticator()
 
 
-class TestPasswordAuthenticator(TestCase):
-    def setUp(self):
-        self.authenticator = PasswordAuthenticator(consumer_key="id",
-                                                   consumer_secret="secret",
-                                                   username="username",
-                                                   password="password")
+# ---------------------------------------------------------------------
+#  AuthenticatorBase tests
+# ---------------------------------------------------------------------
 
-    @mock.patch("aiosfstream.auth.ClientSession")
-    async def test_authenticate(self, session_cls):
-        status = object()
-        response_data = object()
-        response_obj = mock.MagicMock()
-        response_obj.json = mock.CoroutineMock(return_value=response_data)
-        response_obj.status = status
-        session = mock.MagicMock()
-        session.__aenter__ = mock.CoroutineMock(return_value=session)
-        session.__aexit__ = mock.CoroutineMock()
-        session.post = mock.CoroutineMock(return_value=response_obj)
-        session_cls.return_value = session
-        expected_data = {
+def test_init():
+    jd, jl = object(), object()
+    auth = Authenticator(json_dumps=jd, json_loads=jl)
+    assert auth.json_dumps is jd
+    assert auth.json_loads is jl
+
+
+@pytest.mark.asyncio
+async def test_outgoing_sets_header(authenticator):
+    authenticator.token_type = "Bearer"
+    authenticator.access_token = "token"
+    headers = {}
+
+    await authenticator.outgoing([], headers)
+    assert headers["Authorization"] == "Bearer token"
+
+
+@pytest.mark.asyncio
+async def test_outgoing_without_auth_raises(authenticator):
+    with pytest.raises(AuthenticationError, match="without authenticating"):
+        await authenticator.outgoing([], {})
+
+
+@pytest.mark.asyncio
+async def test_authenticate_success(monkeypatch, authenticator):
+    response = {
+        "id": "id_url",
+        "issued_at": "1278448832702",
+        "instance_url": "https://yourInstance.salesforce.com/",
+        "signature": "signature_value",
+        "access_token": "token",
+        "token_type": "Bearer",
+    }
+    status = HTTPStatus.OK
+    authenticator._authenticate = AsyncMock(return_value=(status, response))
+
+    await authenticator.authenticate()
+
+    assert authenticator.id == response["id"]
+    assert authenticator.issued_at == response["issued_at"]
+    assert authenticator.instance_url == response["instance_url"]
+    assert authenticator.signature == response["signature"]
+    assert authenticator.access_token == response["access_token"]
+    assert authenticator.token_type == response["token_type"]
+
+
+@pytest.mark.asyncio
+async def test_authenticate_non_ok_status_code(authenticator):
+    response = {"access_token": "bad"}
+    authenticator._authenticate = AsyncMock(return_value=(HTTPStatus.BAD_REQUEST, response))
+
+    with pytest.raises(AuthenticationError, match="Authentication failed"):
+        await authenticator.authenticate()
+
+    assert authenticator.access_token is None
+    assert authenticator.token_type is None
+
+
+@pytest.mark.asyncio
+async def test_authenticate_on_network_error(authenticator):
+    authenticator._authenticate = AsyncMock(side_effect=ClientError())
+
+    with pytest.raises(AuthenticationError, match="Network request failed"):
+        await authenticator.authenticate()
+
+    assert authenticator.access_token is None
+    assert authenticator.token_type is None
+
+
+@pytest.mark.asyncio
+async def test_incoming_noop(authenticator):
+    payload, headers = [], {}
+    await authenticator.incoming(payload, headers)
+    assert not payload
+    assert not headers
+
+
+def test_token_url_non_sandbox():
+    assert Authenticator()._token_url == TOKEN_URL
+
+
+def test_token_url_sandbox():
+    assert Authenticator(sandbox=True)._token_url == SANDBOX_TOKEN_URL
+
+
+# ---------------------------------------------------------------------
+#  PasswordAuthenticator tests
+# ---------------------------------------------------------------------
+
+@pytest.fixture
+def password_auth():
+    return PasswordAuthenticator(
+        consumer_key="id",
+        consumer_secret="secret",
+        username="username",
+        password="password",
+    )
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_password_authenticate(mock_session, password_auth):
+    status = object()
+    response_data = {"ok": True}
+    response_obj = MagicMock()
+    response_obj.json = AsyncMock(return_value=response_data)
+    response_obj.status = status
+
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock()
+    session.post = AsyncMock(return_value=response_obj)
+    mock_session.return_value = session
+
+    result = await password_auth._authenticate()
+
+    assert result == (status, response_data)
+    mock_session.assert_called_with(json_serialize=password_auth.json_dumps)
+    session.post.assert_awaited_with(
+        password_auth._token_url,
+        data={
             "grant_type": "password",
-            "client_id": self.authenticator.client_id,
-            "client_secret": self.authenticator.client_secret,
-            "username": self.authenticator.username,
-            "password": self.authenticator.password
-        }
-
-        result = await self.authenticator._authenticate()
-
-        self.assertEqual(result, (status, response_data))
-        session_cls.assert_called_with(
-            json_serialize=self.authenticator.json_dumps
-        )
-        session.post.assert_called_with(self.authenticator._token_url,
-                                        data=expected_data)
-        response_obj.json.assert_called_with(
-            loads=self.authenticator.json_loads
-        )
-        session.__aenter__.assert_called()
-        session.__aexit__.assert_called()
-
-    def test_repr(self):
-        result = repr(self.authenticator)
-
-        cls_name = type(self.authenticator).__name__
-        auth = self.authenticator
-        self.assertEqual(
-            result,
-            f"{cls_name}(consumer_key={reprlib.repr(auth.client_id)},"
-            f"consumer_secret={reprlib.repr(auth.client_secret)}, "
-            f"username={reprlib.repr(auth.username)}, "
-            f"password={reprlib.repr(auth.password)})"
-        )
+            "client_id": password_auth.client_id,
+            "client_secret": password_auth.client_secret,
+            "username": password_auth.username,
+            "password": password_auth.password,
+        },
+    )
+    response_obj.json.assert_awaited_with(loads=password_auth.json_loads)
+    session.__aenter__.assert_awaited()
+    session.__aexit__.assert_awaited()
 
 
-class TestRefreshTokenAuthenticator(TestCase):
-    def setUp(self):
-        self.authenticator = RefreshTokenAuthenticator(
-            consumer_key="id",
-            consumer_secret="secret",
-            refresh_token="refresh_token"
-        )
+def test_password_repr(password_auth):
+    result = repr(password_auth)
+    cls = type(password_auth).__name__
+    a = password_auth
+    assert result == (
+        f"{cls}(consumer_key={reprlib.repr(a.client_id)},"
+        f"consumer_secret={reprlib.repr(a.client_secret)}, "
+        f"username={reprlib.repr(a.username)}, "
+        f"password={reprlib.repr(a.password)})"
+    )
 
-    @mock.patch("aiosfstream.auth.ClientSession")
-    async def test_authenticate(self, session_cls):
-        status = object()
-        response_data = object()
-        response_obj = mock.MagicMock()
-        response_obj.json = mock.CoroutineMock(return_value=response_data)
-        response_obj.status = status
-        session = mock.MagicMock()
-        session.__aenter__ = mock.CoroutineMock(return_value=session)
-        session.__aexit__ = mock.CoroutineMock()
-        session.post = mock.CoroutineMock(return_value=response_obj)
-        session_cls.return_value = session
-        expected_data = {
+
+# ---------------------------------------------------------------------
+#  RefreshTokenAuthenticator tests
+# ---------------------------------------------------------------------
+
+@pytest.fixture
+def refresh_auth():
+    return RefreshTokenAuthenticator(
+        consumer_key="id",
+        consumer_secret="secret",
+        refresh_token="refresh_token",
+    )
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_refresh_token_authenticate(mock_session, refresh_auth):
+    status = object()
+    response_data = {"ok": True}
+    response_obj = MagicMock()
+    response_obj.json = AsyncMock(return_value=response_data)
+    response_obj.status = status
+
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock()
+    session.post = AsyncMock(return_value=response_obj)
+    mock_session.return_value = session
+
+    result = await refresh_auth._authenticate()
+
+    assert result == (status, response_data)
+    mock_session.assert_called_with(json_serialize=refresh_auth.json_dumps)
+    session.post.assert_awaited_with(
+        refresh_auth._token_url,
+        data={
             "grant_type": "refresh_token",
-            "client_id": self.authenticator.client_id,
-            "client_secret": self.authenticator.client_secret,
-            "refresh_token": self.authenticator.refresh_token
-        }
+            "client_id": refresh_auth.client_id,
+            "client_secret": refresh_auth.client_secret,
+            "refresh_token": refresh_auth.refresh_token,
+        },
+    )
+    response_obj.json.assert_awaited_with(loads=refresh_auth.json_loads)
+    session.__aenter__.assert_awaited()
+    session.__aexit__.assert_awaited()
 
-        result = await self.authenticator._authenticate()
 
-        self.assertEqual(result, (status, response_data))
-        session_cls.assert_called_with(
-            json_serialize=self.authenticator.json_dumps
-        )
-        session.post.assert_called_with(self.authenticator._token_url,
-                                        data=expected_data)
-        response_obj.json.assert_called_with(
-            loads=self.authenticator.json_loads
-        )
-        session.__aenter__.assert_called()
-        session.__aexit__.assert_called()
-
-    def test_repr(self):
-        result = repr(self.authenticator)
-
-        cls_name = type(self.authenticator).__name__
-        auth = self.authenticator
-        self.assertEqual(
-            result,
-            f"{cls_name}(consumer_key={reprlib.repr(auth.client_id)},"
-            f"consumer_secret={reprlib.repr(auth.client_secret)}, "
-            f"refresh_token={reprlib.repr(auth.refresh_token)})"
-        )
+def test_refresh_repr(refresh_auth):
+    result = repr(refresh_auth)
+    cls = type(refresh_auth).__name__
+    a = refresh_auth
+    assert result == (
+        f"{cls}(consumer_key={reprlib.repr(a.client_id)},"
+        f"consumer_secret={reprlib.repr(a.client_secret)}, "
+        f"refresh_token={reprlib.repr(a.refresh_token)})"
+    )

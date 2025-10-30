@@ -3,14 +3,13 @@ from collections import abc
 from http import HTTPStatus
 import logging
 import json
-import asyncio
 from typing import Optional, Union, MutableMapping, AsyncIterator, Type, cast
 from types import TracebackType
 from enum import Enum, auto, unique
 
 from aiocometd import Client as CometdClient
 from aiocometd.exceptions import ServerError
-from aiocometd.typing import JsonObject, JsonLoader, JsonDumper
+from aiocometd.typing_utils import JsonObject, JsonLoader, JsonDumper
 
 from aiosfstream.auth import AuthenticatorBase, PasswordAuthenticator
 from aiosfstream.replay import ReplayOption, ReplayMarkerStorage, \
@@ -52,7 +51,7 @@ class Client(CometdClient):
                  max_pending_count: int = 100,
                  json_dumps: JsonDumper = json.dumps,
                  json_loads: JsonLoader = json.loads,
-                 loop: Optional[asyncio.AbstractEventLoop] = None):
+                 ):
         """
         :param authenticator: An authenticator object
         :param replay: A ReplayOption or an object capable of storing replay \
@@ -78,10 +77,6 @@ class Client(CometdClient):
         :func:`json.dumps`
         :param json_loads: Function for JSON deserialization, the default is \
         :func:`json.loads`
-        :param loop: Event :obj:`loop <asyncio.BaseEventLoop>` used to
-                     schedule tasks. If *loop* is ``None`` then
-                     :func:`asyncio.get_event_loop` is used to get the default
-                     event loop.
         """
         if not isinstance(authenticator, AuthenticatorBase):
             raise TypeError(f"authenticator should be an instance of "
@@ -121,7 +116,7 @@ class Client(CometdClient):
                          max_pending_count=max_pending_count,
                          json_dumps=json_dumps,
                          json_loads=json_loads,
-                         loop=loop)
+                         )
 
     @translate_errors
     async def open(self) -> None:
@@ -298,7 +293,7 @@ class SalesforceStreamingClient(Client):
                  max_pending_count: int = 100, sandbox: bool = False,
                  json_dumps: JsonDumper = json.dumps,
                  json_loads: JsonLoader = json.loads,
-                 loop: Optional[asyncio.AbstractEventLoop] = None):
+                 ):
         """
         :param consumer_key: Consumer key from the Salesforce connected \
         app definition
@@ -331,10 +326,6 @@ class SalesforceStreamingClient(Client):
         :func:`json.dumps`
         :param json_loads: Function for JSON deserialization, the default is \
         :func:`json.loads`
-        :param loop: Event :obj:`loop <asyncio.BaseEventLoop>` used to
-                     schedule tasks. If *loop* is ``None`` then
-                     :func:`asyncio.get_event_loop` is used to get the default
-                     event loop.
         """
         authenticator = PasswordAuthenticator(
             consumer_key=consumer_key,
@@ -354,5 +345,4 @@ class SalesforceStreamingClient(Client):
             max_pending_count=max_pending_count,
             json_dumps=json_dumps,
             json_loads=json_loads,
-            loop=loop
         )

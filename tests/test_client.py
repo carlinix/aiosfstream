@@ -44,7 +44,6 @@ class TestClient(TestCase):
         max_pending_count = 1
         json_dumps = object()
         json_loads = object()
-        loop = object()
         replay_storage_policy = object()
 
         with self.assertLogs("aiosfstream.client", "DEBUG") as log:
@@ -54,7 +53,7 @@ class TestClient(TestCase):
                             replay_storage_policy=replay_storage_policy,
                             json_dumps=json_dumps,
                             json_loads=json_loads,
-                            loop=loop)
+                            )
 
         self.assertEqual(client.url, "")
         self.assertEqual(client.auth, self.authenticator)
@@ -62,7 +61,6 @@ class TestClient(TestCase):
         self.assertEqual(client._max_pending_count, max_pending_count)
         self.assertEqual(client._json_dumps, json_dumps)
         self.assertEqual(client._json_loads, json_loads)
-        self.assertEqual(client._loop, loop)
         self.assertEqual(log.output,
                          ["DEBUG:aiosfstream.client:"
                           "Client created with replay storage: {!r}, "
@@ -416,7 +414,6 @@ class TestSalesforceStreamingClient(TestCase):
         max_pending_count = 2
         json_dumps = object()
         json_loads = object()
-        loop = object()
         sandbox_enabled = True
 
         SalesforceStreamingClient(
@@ -432,7 +429,6 @@ class TestSalesforceStreamingClient(TestCase):
             sandbox=sandbox_enabled,
             json_dumps=json_dumps,
             json_loads=json_loads,
-            loop=loop
         )
 
         authenticator_cls.assert_called_with(
@@ -453,5 +449,4 @@ class TestSalesforceStreamingClient(TestCase):
             max_pending_count=max_pending_count,
             json_dumps=json_dumps,
             json_loads=json_loads,
-            loop=loop
         )

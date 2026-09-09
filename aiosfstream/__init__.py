@@ -6,6 +6,7 @@ from aiosfstream.client import Client, SalesforceStreamingClient  # noqa: F401
 from aiosfstream.client import ReplayMarkerStoragePolicy  # noqa: F401
 from aiosfstream.auth import PasswordAuthenticator  # noqa: F401
 from aiosfstream.auth import RefreshTokenAuthenticator  # noqa: F401
+from aiosfstream.auth import ClientCredentialsAuthenticator  # noqa: F401
 from aiosfstream.replay import ReplayMarker, ReplayOption  # noqa: F401
 from aiosfstream.replay import MappingStorage  # noqa: F401
 from aiosfstream.replay import DefaultMappingStorage  # noqa: F401

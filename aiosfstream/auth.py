@@ -225,4 +225,93 @@ class RefreshTokenAuthenticator(AuthenticatorBase):
             response_data = await response.json(loads=self.json_loads)
             return response.status, response_data
 
+
+class ClientCredentialsAuthenticator(AuthenticatorBase):
+    """Authenticator for using the OAuth 2.0 Client Credentials Flow
+
+    Unlike the username-password and refresh token flows, this flow sends no \
+    user credentials. The user that the integration acts as is configured on \
+    the Salesforce side, on the external client app or connected app.
+
+    Salesforce only issues client credentials tokens from an org's My Domain \
+    host, so *domain* is required, and ``login`` and ``test`` are rejected.
+    """
+    def __init__(self, consumer_key: str, consumer_secret: str,
+                 domain: str,
+                 json_dumps: JsonDumper = json.dumps,
+                 json_loads: JsonLoader = json.loads) -> None:
+        """
+        :param consumer_key: Consumer key from the Salesforce external \
+        client app or connected app definition
+        :param consumer_secret: Consumer secret from the Salesforce \
+        external client app or connected app definition
+        :param domain: The org's My Domain name, without a scheme and \
+        without the ``.salesforce.com`` suffix, such as ``mycompany.my``
+        :param json_dumps: Function for JSON serialization, the default is \
+        :func:`json.dumps`
+        :param json_loads: Function for JSON deserialization, the default is \
+        :func:`json.loads`
+        :raise ValueError: If *domain* is empty, looks like a URL, carries \
+        the ``.salesforce.com`` suffix, or is ``login`` or ``test``
+        """
+        super().__init__(json_dumps=json_dumps, json_loads=json_loads)
+        #: OAuth2 client id
+        self.client_id = consumer_key
+        #: OAuth2 client secret
+        self.client_secret = consumer_secret
+        #: The org's My Domain name
+        self.domain = self._validate_domain(domain)
+
+    @staticmethod
+    def _validate_domain(domain: str) -> str:
+        """Check that *domain* can name a My Domain host
+
+        The value is used to build the token URL, so a URL or a value with
+        the ``.salesforce.com`` suffix would produce a malformed endpoint,
+        and ``login``/``test`` would point at a host that does not serve
+        this flow. Failing here gives a clearer error than a 404 later.
+
+        :param domain: The domain value to check
+        :return: The validated domain
+        :raise ValueError: If the value cannot name a My Domain host
+        """
+        value = domain.strip().strip("/")
+        if not value:
+            raise ValueError("domain is required for the client "
+                             "credentials flow")
+        if "://" in value:
+            raise ValueError("domain must be a bare My Domain name, "
+                             f"not a URL: {domain!r}")
+        if value.endswith(".salesforce.com"):
+            raise ValueError("domain must not carry the .salesforce.com "
+                             f"suffix: {domain!r}")
+        if value in ("login", "test"):
+            raise ValueError("the client credentials flow requires an "
+                             f"org's My Domain host, not {value!r}")
+        return value
+
+    @property
+    def _token_url(self) -> str:
+        """The URL that should be used for token requests"""
+        return f"https://{self.domain}.salesforce.com/services/oauth2/token"
+
+    def __repr__(self) -> str:
+        """Formal string representation"""
+        cls_name = type(self).__name__
+        return f"{cls_name}(consumer_key={reprlib.repr(self.client_id)}, " \
+               f"consumer_secret={reprlib.repr(self.client_secret)}, " \
+               f"domain={reprlib.repr(self.domain)})"
+
+    async def _authenticate(self) -> Tuple[int, JsonObject]:
+        async with ClientSession(json_serialize=self.json_dumps) as session:
+            data = {
+                "grant_type": "client_credentials",
+                "client_id": self.client_id,
+                "client_secret": self.client_secret
+            }
+            response = await session.post(self._token_url, data=data)
+            response_data = await response.json(loads=self.json_loads)
+            return response.status, response_data
+
+
 # pylint: enable=too-many-arguments

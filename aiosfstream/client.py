@@ -18,7 +18,10 @@ from aiosfstream.exceptions import translate_errors, translate_errors_context
 
 
 COMETD_PATH = "cometd"
-API_VERSION = "45.0"
+# Kept in step with simple_salesforce.api.DEFAULT_API_VERSION so that the
+# streaming and REST/Bulk integrations target one Salesforce API version.
+# Bumping simple-salesforce means revisiting this constant.
+API_VERSION = "59.0"
 LOGGER = logging.getLogger(__name__)
 ReplayParameter = Union[ReplayOption,
                         ReplayMarkerStorage,

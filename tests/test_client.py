@@ -11,6 +11,7 @@ from aiosfstream.auth import (
     TOKEN_URL,
     SANDBOX_TOKEN_URL,
 )
+from aiosfstream.client import API_VERSION, COMETD_PATH, Client
 from aiosfstream.exceptions import AuthenticationError
 
 
@@ -228,3 +229,29 @@ def test_refresh_repr(refresh_auth):
         f"consumer_secret={reprlib.repr(a.client_secret)}, "
         f"refresh_token={reprlib.repr(a.refresh_token)})"
     )
+
+
+# ---------------------------------------------------------------------
+#  CometD URL tests
+# ---------------------------------------------------------------------
+
+def test_api_version_matches_simple_salesforce_default():
+    """Both Salesforce clients must target one API version.
+
+    simple_salesforce.api.DEFAULT_API_VERSION is 59.0 on the 1.12.10 pin
+    used alongside this library. The assertion is deliberately literal so
+    that bumping one library without the other fails here, instead of
+    silently splitting the integration across two API versions.
+    """
+    assert API_VERSION == "59.0"
+
+
+def test_get_cometd_url():
+    assert Client.get_cometd_url("https://mycompany.my.salesforce.com") == (
+        "https://mycompany.my.salesforce.com/cometd/59.0"
+    )
+
+
+def test_get_cometd_url_uses_module_constants():
+    url = Client.get_cometd_url("https://example.my.salesforce.com")
+    assert url.endswith(f"/{COMETD_PATH}/{API_VERSION}")

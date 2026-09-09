@@ -8,8 +8,9 @@ INSTALL_REQUIRES = [
     "aiohttp>=3.1,<4.0"
 ]
 TESTS_REQUIRE = [
-    "asynctest>=0.12.0,<1.0.0",
-    "coverage>=4.5,<5.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=1.0",
+    "coverage>=7.0",
     "flake8",
     "pylint",
     "mypy"

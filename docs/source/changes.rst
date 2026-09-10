@@ -4,6 +4,9 @@ Changelog
 1.3.0 (2026-09-10)
 ------------------
 
+- Add ``SOAPAuthenticator`` for the SOAP API's ``login()`` call, which needs
+  no connected app. Salesforce removes ``login()`` from API versions 31.0
+  through 64.0 in Summer '27, so prefer another authenticator where possible.
 - Add ``JWTBearerAuthenticator`` for the OAuth 2.0 JWT Bearer flow, the
   Salesforce recommended server-to-server flow. Signing needs the new ``jwt``
   extra: ``pip install aiosfstream[jwt]``.

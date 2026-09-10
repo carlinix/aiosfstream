@@ -27,6 +27,9 @@ Authenticators
 .. autoclass:: RefreshTokenAuthenticator
     :members:
 
+.. autoclass:: SOAPAuthenticator
+    :members:
+
 .. autoclass:: ClientCredentialsAuthenticator
     :members:
 

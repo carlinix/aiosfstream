@@ -12,6 +12,7 @@
 .. _password_auth: https://help.salesforce.com/articleView?id=remoteaccess_oauth_username_password_flow.htm&type=5
 .. _jwt_auth: https://help.salesforce.com/s/articleView?id=xcloud.remoteaccess_oauth_jwt_flow.htm&type=5
 .. _refresh_auth: https://help.salesforce.com/articleView?id=remoteaccess_oauth_refresh_token_flow.htm&type=5
+.. _soap_login: https://developer.salesforce.com/docs/atlas.en-us.api.meta/api/sforce_api_calls_login.htm
 .. _connected_app: https://help.salesforce.com/articleView?id=connected_app_overview.htm&type=5
 .. _sf_auth: https://help.salesforce.com/articleView?id=remoteaccess_authenticate_overview.htm
 .. _web_server_auth: https://help.salesforce.com/articleView?id=remoteaccess_oauth_web_server_flow.htm&type=5

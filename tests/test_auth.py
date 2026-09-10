@@ -1035,3 +1035,14 @@ def test_soap_repr_hides_the_password():
     )
     assert "s3cret" not in result
     assert "XyZ123" not in result
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_keeps_api_inside_the_host(mock_session, soap_auth):
+    """simple-salesforce's unanchored "-api" strip would corrupt this host."""
+    soap_session(mock_session, body=LOGIN_RESPONSE.replace("mycompany", "acme-apidev"))
+
+    await soap_auth.authenticate()
+
+    assert soap_auth.instance_url == "https://acme-apidev.my.salesforce.com"

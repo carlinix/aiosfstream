@@ -670,6 +670,11 @@ class SOAPAuthenticator(AuthenticatorBase):
                 "Authentication failed", "The login response carries no session"
             )
 
+        # The origin of serverUrl is the instance URL, taken as it comes.
+        # simple-salesforce strips "-api" from the host at this point, which
+        # is an unanchored substring replace: a My Domain such as
+        # "acme-apidev" loses the wrong characters. Salesforce's own Pub/Sub
+        # API example derives the instance URL exactly the way this does.
         parts = urlsplit(server_url)
         return {
             "access_token": session_id,

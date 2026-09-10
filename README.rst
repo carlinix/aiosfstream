@@ -9,7 +9,7 @@ aiosfstream
     :target: http://aiosfstream.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-.. image:: https://github.com/carlinix/aiosfstream/actions/workflows/ci.yml/badge.svg?branch=develop
+.. image:: https://github.com/carlinix/aiosfstream/actions/workflows/ci.yml/badge.svg?branch=main
     :target: https://github.com/carlinix/aiosfstream/actions/workflows/ci.yml
     :alt: Build status
 

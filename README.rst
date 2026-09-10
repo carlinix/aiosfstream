@@ -115,6 +115,26 @@ Run the same checks as continuous integration before opening a pull request:
     uv run twine check --strict dist/*
     uv run check-wheel-contents dist/*.whl
 
+Releasing
+---------
+
+The release workflow accepts an existing unprefixed SemVer tag that matches the
+version in ``pyproject.toml``. It builds the distributions once, then reuses the
+same artifacts for every enabled registry and the GitHub Release.
+
+Publishing is disabled by default:
+
+- Set ``ENABLE_PYPI_PUBLISH`` to ``true`` after configuring the ``pypi``
+  Trusted Publisher environment.
+- Set ``ENABLE_GCP_PUBLISH`` to ``true`` after configuring the
+  ``GCP_WORKLOAD_IDENTITY_PROVIDER`` and ``GCP_SERVICE_ACCOUNT`` secrets. The
+  service account must be able to write to the ``avid-python-packages``
+  Artifact Registry repository.
+
+Publish ``aiocometd`` 1.0.0 to each package registry before enabling the
+corresponding publication target for this project. The uv Git source is used
+only for development and CI resolution.
+
 .. _aiohttp: https://github.com/aio-libs/aiohttp/
 .. _aiocometd: https://github.com/carlinix/aiocometd/
 .. _asyncio: https://docs.python.org/3/library/asyncio.html

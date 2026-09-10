@@ -4,14 +4,22 @@ name: Release
 # accepts the project's existing unprefixed SemVer tags, such as `1.2.0`.
 #
 # One-time prerequisites:
-#   1. Publish aiocometd 1.0.0 to PyPI. The aiosfstream wheel declares
-#      `aiocometd>=1.0.0`, while uv resolves development installs from GitHub.
+#   1. Publish aiocometd 1.0.0 to each enabled package registry. The
+#      aiosfstream wheel declares `aiocometd>=1.0.0`, while uv resolves
+#      development installs from GitHub.
 #   2. Register a PyPI Trusted Publisher with these values:
 #        Owner: carlinix
 #        Repository: aiosfstream
 #        Workflow: release.yml
 #        Environment: pypi
 #   3. Set the repository variable ENABLE_PYPI_PUBLISH to `true`.
+#   4. For GCP Artifact Registry, configure the secrets
+#      GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT. Grant the
+#      service account write access to the `avid-python-packages` repository.
+#   5. Set the repository variable ENABLE_GCP_PUBLISH to `true`.
+#
+# Both publication targets are opt-in. A tag can still produce a GitHub Release
+# while either target remains unconfigured.
 on:
   push:
     tags:
@@ -139,15 +147,57 @@ jobs:
         with:
           packages-dir: dist/
 
+  publish-gcp:
+    name: Publish to GCP Artifact Registry
+    needs: [guard, build]
+    if: ${{ vars.ENABLE_GCP_PUBLISH == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.guard.outputs.commit }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          version: "0.12.2"
+      - name: Install Python
+        run: uv python install 3.13
+      - name: Install publishing dependencies
+        run: uv sync --no-default-groups --group publish --python 3.13
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - name: Publish to Artifact Registry
+        env:
+          TWINE_REPOSITORY_URL: "https://us-central1-python.pkg.dev/fabled-lyceum-369319/avid-python-packages/"
+        run: >-
+          uv run --no-sync twine upload
+          --repository-url "$TWINE_REPOSITORY_URL"
+          dist/* --verbose
+
   github-release:
     name: Create GitHub Release
-    needs: [guard, build, publish-pypi]
+    needs: [guard, build, publish-pypi, publish-gcp]
     if: >-
       ${{ always()
       && needs.guard.result == 'success'
       && needs.build.result == 'success'
       && (needs.publish-pypi.result == 'success'
-          || needs.publish-pypi.result == 'skipped') }}
+          || needs.publish-pypi.result == 'skipped')
+      && (needs.publish-gcp.result == 'success'
+          || needs.publish-gcp.result == 'skipped') }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write

@@ -497,7 +497,9 @@ def test_jwt_init(jwt_auth):
 
 def test_jwt_reads_private_key_from_path(tmp_path):
     key_file = tmp_path / "server.key"
-    key_file.write_text(PRIVATE_KEY)
+    # write_bytes, not write_text: the latter would rewrite the line endings
+    # on Windows, so the assertion below would compare CRLF against LF.
+    key_file.write_bytes(PRIVATE_KEY.encode())
 
     auth = JWTBearerAuthenticator(
         consumer_key="id",
@@ -506,6 +508,7 @@ def test_jwt_reads_private_key_from_path(tmp_path):
     )
 
     assert auth.private_key == PRIVATE_KEY.encode()
+    assert decode_assertion(auth._create_assertion())["iss"] == "id"
 
 
 def test_jwt_missing_key_path_fails_on_init(tmp_path):

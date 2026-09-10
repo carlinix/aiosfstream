@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+1.3.0 (2026-09-10)
+------------------
 
 - Add ``JWTBearerAuthenticator`` for the OAuth 2.0 JWT Bearer flow, the
   Salesforce recommended server-to-server flow. Signing needs the new ``jwt``

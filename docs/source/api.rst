@@ -12,18 +12,6 @@ Client
     :members:
     :undoc-members:
 
-    .. autocomethod:: open
-    .. autocomethod:: close
-    .. autocomethod:: publish
-    .. autocomethod:: subscribe
-    .. autocomethod:: unsubscribe
-    .. autocomethod:: receive
-    .. autoattribute:: closed
-    .. autoattribute:: subscriptions
-    .. autoattribute:: connection_type
-    .. autoattribute:: pending_count
-    .. autoattribute:: has_pending_messages
-
 .. autoclass:: ReplayMarkerStoragePolicy
     :members:
     :undoc-members:
@@ -52,11 +40,7 @@ Replay
     :show-inheritance:
 
 .. autoclass:: ReplayMarkerStorage
-
-    .. autocomethod:: get_replay_marker
-    .. autocomethod:: set_replay_marker
-    .. autocomethod:: extract_replay_id
-    .. autocomethod:: __call__
+    :members:
 
 .. autoclass:: MappingStorage
 

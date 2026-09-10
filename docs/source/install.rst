@@ -1,21 +1,29 @@
 Installation
 ============
 
+aiosfstream requires Python 3.11 or newer.
+
 .. code-block:: bash
 
     pip install aiosfstream
 
-Install extras
---------------
+Development environment
+-----------------------
 
-aiosfstream defines several groups of optional requirements:
-
-- ``tests`` for running unit tests
-- ``docs`` for building the documentation
-- ``dev`` for creating a complete development enviroment
-
-Any combination of these options can be specified during installation.
+The repository uses uv_ and a committed lockfile to provide a reproducible
+development environment. Install every development dependency group with:
 
 .. code-block:: bash
 
-    pip install aiosfstream[tests,docs,dev]
+    uv sync --all-groups
+
+Run individual checks through uv:
+
+.. code-block:: bash
+
+    uv run pytest
+    uv run ruff check .
+    uv run ruff format --check .
+    uv run sphinx-build -W --keep-going -b html docs/source docs/build/html
+
+.. _uv: https://docs.astral.sh/uv/

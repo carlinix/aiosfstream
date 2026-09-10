@@ -9,13 +9,9 @@ aiosfstream
     :target: http://aiosfstream.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-.. image:: https://travis-ci.org/robertmrk/aiosfstream.svg?branch=develop
-    :target: https://travis-ci.org/robertmrk/aiosfstream
+.. image:: https://github.com/carlinix/aiosfstream/actions/workflows/ci.yml/badge.svg?branch=develop
+    :target: https://github.com/carlinix/aiosfstream/actions/workflows/ci.yml
     :alt: Build status
-
-.. image:: https://coveralls.io/repos/github/robertmrk/aiosfstream/badge.svg
-    :target: https://coveralls.io/github/robertmrk/aiosfstream
-    :alt: Coverage
 
 .. image:: https://img.shields.io/badge/License-MIT-yellow.svg
     :target: https://opensource.org/licenses/MIT

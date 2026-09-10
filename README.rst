@@ -9,13 +9,9 @@ aiosfstream
     :target: http://aiosfstream.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-.. image:: https://travis-ci.org/robertmrk/aiosfstream.svg?branch=develop
-    :target: https://travis-ci.org/robertmrk/aiosfstream
+.. image:: https://github.com/carlinix/aiosfstream/actions/workflows/ci.yml/badge.svg?branch=develop
+    :target: https://github.com/carlinix/aiosfstream/actions/workflows/ci.yml
     :alt: Build status
-
-.. image:: https://coveralls.io/repos/github/robertmrk/aiosfstream/badge.svg
-    :target: https://coveralls.io/github/robertmrk/aiosfstream
-    :alt: Coverage
 
 .. image:: https://img.shields.io/badge/License-MIT-yellow.svg
     :target: https://opensource.org/licenses/MIT
@@ -57,26 +53,25 @@ Usage
 
 
     async def stream_events():
-        # connect to Streaming API
+        # Connect to the Streaming API.
         async with SalesforceStreamingClient(
                 consumer_key="<consumer key>",
                 consumer_secret="<consumer secret>",
                 username="<username>",
                 password="<password>") as client:
 
-            # subscribe to topics
+            # Subscribe to topics.
             await client.subscribe("/topic/one")
             await client.subscribe("/topic/two")
 
-            # listen for incoming messages
+            # Listen for incoming messages.
             async for message in client:
                 topic = message["channel"]
                 data = message["data"]
                 print(f"{topic}: {data}")
 
     if __name__ == "__main__":
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(stream_events())
+        asyncio.run(stream_events())
 
 Documentation
 -------------
@@ -93,13 +88,37 @@ Install
 Requirements
 ------------
 
-- Python 3.6+
+- Python 3.11+
 - aiohttp_
 - aiocometd_
 
+Development
+-----------
+
+The repository uses uv_ for dependency management and command execution. The
+lockfile contains the exact development environment:
+
+.. code-block:: bash
+
+    uv sync --all-groups
+
+Run the same checks as continuous integration before opening a pull request:
+
+.. code-block:: bash
+
+    uv run ruff check .
+    uv run ruff format --check .
+    uv run coverage run -m pytest
+    uv run coverage report
+    uv run sphinx-build -E -W --keep-going -b html docs/source docs/build/html
+    uv build --no-sources
+    uv run twine check --strict dist/*
+    uv run check-wheel-contents dist/*.whl
+
 .. _aiohttp: https://github.com/aio-libs/aiohttp/
-.. _aiocometd: https://github.com/robertmrk/aiocometd/
+.. _aiocometd: https://github.com/carlinix/aiocometd/
 .. _asyncio: https://docs.python.org/3/library/asyncio.html
+.. _uv: https://docs.astral.sh/uv/
 .. _api: https://developer.salesforce.com/docs/atlas.en-us.api_streaming.meta/api_streaming/intro_stream.htm
 .. _PushTopic: https://developer.salesforce.com/docs/atlas.en-us.api_streaming.meta/api_streaming/working_with_pushtopics.htm
 .. _GenericStreaming: https://developer.salesforce.com/docs/atlas.en-us.api_streaming.meta/api_streaming/generic_streaming_intro.htm#generic_streaming_intro

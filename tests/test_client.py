@@ -1,15 +1,16 @@
-import pytest
 import reprlib
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from aiohttp.client_exceptions import ClientError
 
 from aiosfstream.auth import (
+    SANDBOX_TOKEN_URL,
+    TOKEN_URL,
     AuthenticatorBase,
     PasswordAuthenticator,
     RefreshTokenAuthenticator,
-    TOKEN_URL,
-    SANDBOX_TOKEN_URL,
 )
 from aiosfstream.client import API_VERSION, COMETD_PATH, Client
 from aiosfstream.exceptions import AuthenticationError
@@ -28,6 +29,7 @@ def authenticator():
 # ---------------------------------------------------------------------
 #  AuthenticatorBase tests
 # ---------------------------------------------------------------------
+
 
 def test_init():
     jd, jl = object(), object()
@@ -78,7 +80,9 @@ async def test_authenticate_success(monkeypatch, authenticator):
 @pytest.mark.asyncio
 async def test_authenticate_non_ok_status_code(authenticator):
     response = {"access_token": "bad"}
-    authenticator._authenticate = AsyncMock(return_value=(HTTPStatus.BAD_REQUEST, response))
+    authenticator._authenticate = AsyncMock(
+        return_value=(HTTPStatus.BAD_REQUEST, response)
+    )
 
     with pytest.raises(AuthenticationError, match="Authentication failed"):
         await authenticator.authenticate()
@@ -117,6 +121,7 @@ def test_token_url_sandbox():
 # ---------------------------------------------------------------------
 #  PasswordAuthenticator tests
 # ---------------------------------------------------------------------
+
 
 @pytest.fixture
 def password_auth():
@@ -178,6 +183,7 @@ def test_password_repr(password_auth):
 #  RefreshTokenAuthenticator tests
 # ---------------------------------------------------------------------
 
+
 @pytest.fixture
 def refresh_auth():
     return RefreshTokenAuthenticator(
@@ -234,6 +240,7 @@ def test_refresh_repr(refresh_auth):
 # ---------------------------------------------------------------------
 #  CometD URL tests
 # ---------------------------------------------------------------------
+
 
 def test_api_version_matches_simple_salesforce_default():
     """Both Salesforce clients must target one API version.

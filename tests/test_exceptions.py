@@ -1,11 +1,12 @@
-import pytest
 import aiocometd.exceptions as cometd_exc
-import aiosfstream.exceptions as exc
+import pytest
 
+import aiosfstream.exceptions as exc
 
 # -------------------------
 #  Exception Hierarchy Tests
 # -------------------------
+
 
 def test_root_exception():
     assert issubclass(exc.AiosfstreamException, cometd_exc.AiocometdException)
@@ -18,7 +19,9 @@ def test_authentication_error():
 def test_transport_invalid_operation():
     assert issubclass(exc.TransportInvalidOperation, exc.AiosfstreamException)
     assert issubclass(exc.TransportInvalidOperation, exc.TransportError)
-    assert issubclass(exc.TransportInvalidOperation, cometd_exc.TransportInvalidOperation)
+    assert issubclass(
+        exc.TransportInvalidOperation, cometd_exc.TransportInvalidOperation
+    )
 
 
 def test_transport_timeout():
@@ -30,7 +33,9 @@ def test_transport_timeout():
 def test_connection_closed():
     assert issubclass(exc.TransportConnectionClosed, exc.AiosfstreamException)
     assert issubclass(exc.TransportConnectionClosed, exc.TransportError)
-    assert issubclass(exc.TransportConnectionClosed, cometd_exc.TransportConnectionClosed)
+    assert issubclass(
+        exc.TransportConnectionClosed, cometd_exc.TransportConnectionClosed
+    )
 
 
 def test_server_error():
@@ -53,6 +58,7 @@ def test_client_invalid_operation():
 #  translate_errors() Tests
 # -------------------------
 
+
 def test_translate_returns_result_on_no_error():
     return_value = object()
     result = exc.translate_errors(lambda: return_value)()
@@ -67,3 +73,4 @@ async def test_async_translate_returns_result_on_no_error():
         return return_value
 
     result = await exc.translate_errors(func)()
+    assert result is return_value

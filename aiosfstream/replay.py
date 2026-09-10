@@ -1,14 +1,16 @@
 """Replay extension classes"""
-from collections import abc
-from abc import abstractmethod
-from enum import IntEnum, unique
+
 import reprlib
-from typing import Optional, NamedTuple, MutableMapping, Any, cast, \
-    AsyncContextManager
+from abc import abstractmethod
+from collections import abc
+from collections.abc import MutableMapping
+from contextlib import AbstractAsyncContextManager
+from enum import IntEnum, unique
+from typing import Any, NamedTuple, cast
 
 from aiocometd import Extension
-from aiocometd.typing_utils import Payload, Headers, JsonObject
 from aiocometd.constants import MetaChannel
+from aiocometd.typing_utils import Headers, JsonObject, Payload
 
 from aiosfstream.exceptions import ReplayError
 
@@ -16,6 +18,7 @@ from aiosfstream.exceptions import ReplayError
 @unique
 class ReplayOption(IntEnum):
     """Replay options supported by Salesforce"""
+
     #: Receive new events that are broadcast after the client subscribes
     NEW_EVENTS = -1
     #: Receive all events, including past events that are within the 24-hour
@@ -25,8 +28,9 @@ class ReplayOption(IntEnum):
 
 class ReplayMarker(NamedTuple):
     """Class for storing a message replay id and its creation date"""
-    #: Creation date of a message, as a ISO 8601 formatted  datetime string or
-    #: a unix timestamp as a string
+
+    #: Creation date of a message, as an ISO 8601 formatted datetime string or
+    #: a Unix timestamp as a string
     date: str
     #: Replay id of a message
     replay_id: int
@@ -34,12 +38,12 @@ class ReplayMarker(NamedTuple):
 
 class ReplayMarkerStorage(Extension):
     """Abstract base class for replay marker storage implementations"""
+
     def __init__(self) -> None:
         super().__init__()
-        self.replay_fallback: Optional[ReplayOption] = None
+        self.replay_fallback: ReplayOption | None = None
 
-    async def incoming(self, payload: Payload,
-                       headers: Optional[Headers] = None) -> None:
+    async def incoming(self, payload: Payload, headers: Headers | None = None) -> None:
         pass
 
     async def outgoing(self, payload: Payload, headers: Headers) -> None:
@@ -61,7 +65,7 @@ class ReplayMarkerStorage(Extension):
         # if there is a replay fallback set, then it must be used as the replay
         # id in order to successfully subscribe
         if self.replay_fallback:
-            replay_id: Optional[int] = self.replay_fallback
+            replay_id: int | None = self.replay_fallback
             self.replay_fallback = None
         # otherwise get the stored replay id
         else:
@@ -90,15 +94,13 @@ class ReplayMarkerStorage(Extension):
         if "data" in message:
             # get the creation date of the message from a PushTopic message
             # or Generic Streaming message
-            if ("event" in message["data"] and
-                    "createdDate" in message["data"]["event"]):
+            if "event" in message["data"] and "createdDate" in message["data"]["event"]:
                 creation_date = message["data"]["event"]["createdDate"]
             elif "payload" in message["data"]:
                 payload = message["data"]["payload"]
                 # get the creation timestamp for a Change Data Capture event
                 if "ChangeEventHeader" in payload:
-                    timestamp = payload["ChangeEventHeader"]\
-                        .get("commitTimestamp")
+                    timestamp = payload["ChangeEventHeader"].get("commitTimestamp")
                     creation_date = str(timestamp)
                 # get the creation date of a Platform Event
                 else:
@@ -110,7 +112,7 @@ class ReplayMarkerStorage(Extension):
         return creation_date
 
     async def extract_replay_id(self, message: JsonObject) -> None:
-        """Extract and store the replay id present int the *message*
+        """Extract and store the replay id present in the *message*
 
         :param message: An incoming broadcast message
         :raise ReplayError: If no creation date can be found in the *message*
@@ -120,21 +122,23 @@ class ReplayMarkerStorage(Extension):
 
         # create the replay marker object from the creation date and the
         # actual id
-        marker = ReplayMarker(date=self.get_message_date(message),
-                              replay_id=message["data"]["event"]["replayId"])
+        marker = ReplayMarker(
+            date=self.get_message_date(message),
+            replay_id=message["data"]["event"]["replayId"],
+        )
 
         # get the last, stored, replay marker
         last_marker = await self.get_replay_marker(subscription)
 
         # only store the extracted replay marker, if there is no replay \
         # marker for the subscription yet, or if the stored replay marker is\
-        # older then the extracted one or it has the same data (otherwise,
+        # older than the extracted one or it has the same date (otherwise,
         # we're seeing a replayed message, and in that case, it shouldn't be
         # stored)
         if not last_marker or last_marker.date <= marker.date:
             await self.set_replay_marker(subscription, marker)
 
-    async def get_replay_id(self, subscription: str) -> Optional[int]:
+    async def get_replay_id(self, subscription: str) -> int | None:
         """Retrieve a stored replay id for the given *subscription*
 
         :param subscription: Name of the subscribed channel
@@ -147,8 +151,7 @@ class ReplayMarkerStorage(Extension):
         return None
 
     @abstractmethod
-    async def get_replay_marker(self, subscription: str) \
-            -> Optional[ReplayMarker]:
+    async def get_replay_marker(self, subscription: str) -> ReplayMarker | None:
         """Retrieve a stored replay marker for the given *subscription*
 
         :param subscription: Name of the subscribed channel
@@ -157,15 +160,16 @@ class ReplayMarkerStorage(Extension):
         """
 
     @abstractmethod
-    async def set_replay_marker(self, subscription: str,
-                                replay_marker: ReplayMarker) -> None:
+    async def set_replay_marker(
+        self, subscription: str, replay_marker: ReplayMarker
+    ) -> None:
         """Store the *replay_marker* for the given *subscription*
 
         :param subscription: Name of the subscribed channel
         :param replay_marker: A replay marker
         """
 
-    def __call__(self, message: JsonObject) -> AsyncContextManager[None]:
+    def __call__(self, message: JsonObject) -> AbstractAsyncContextManager[None]:
         """Return an asynchronous context manager instance for extracting the
         replay id from the *message* if no exceptions occur inside the runtime
         context
@@ -176,7 +180,7 @@ class ReplayMarkerStorage(Extension):
         return ReplayMarkerStorageContextManager(self, message)
 
 
-class ReplayMarkerStorageContextManager(AsyncContextManager[None]):
+class ReplayMarkerStorageContextManager(AbstractAsyncContextManager[None]):
     """Asynchronous context manager for conditionally extracting the replay \
     id from a message
 
@@ -184,8 +188,10 @@ class ReplayMarkerStorageContextManager(AsyncContextManager[None]):
     will be raised, otherwise if the context is exited normally, then the
     replay id will be extracted from the managed response message.
     """
-    def __init__(self, replay_storage: ReplayMarkerStorage,
-                 message: JsonObject) -> None:
+
+    def __init__(
+        self, replay_storage: ReplayMarkerStorage, message: JsonObject
+    ) -> None:
         """
         :param replay_storage: A :obj:`ReplayMarkerStorage` instance
         :param message: A response message
@@ -196,8 +202,7 @@ class ReplayMarkerStorageContextManager(AsyncContextManager[None]):
     async def __aenter__(self) -> None:
         """Enter the runtime context"""
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) \
-            -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Extract the replay id from the message managed by the context or \
         raise any exception triggered within the runtime context.
         """
@@ -207,13 +212,15 @@ class ReplayMarkerStorageContextManager(AsyncContextManager[None]):
 
 class MappingStorage(ReplayMarkerStorage):
     """Mapping based replay marker storage"""
+
     def __init__(self, mapping: MutableMapping[str, ReplayMarker]) -> None:
         """
         :param mapping: A MutableMapping object for storing replay markers
         """
         if not isinstance(mapping, abc.MutableMapping):
-            raise TypeError("mapping parameter should be an instance of "
-                            "MutableMapping.")
+            raise TypeError(
+                "mapping parameter should be an instance of MutableMapping."
+            )
         super().__init__()
         #: A MutableMapping object for storing replay markers
         self.mapping = mapping
@@ -223,21 +230,22 @@ class MappingStorage(ReplayMarkerStorage):
         cls_name = type(self).__name__
         return f"{cls_name}(mapping={reprlib.repr(self.mapping)})"
 
-    async def set_replay_marker(self, subscription: str,
-                                replay_marker: ReplayMarker) -> None:
+    async def set_replay_marker(
+        self, subscription: str, replay_marker: ReplayMarker
+    ) -> None:
         self.mapping[subscription] = replay_marker
 
-    async def get_replay_marker(self, subscription: str) \
-            -> Optional[ReplayMarker]:
+    async def get_replay_marker(self, subscription: str) -> ReplayMarker | None:
         try:
             return self.mapping[subscription]
         except KeyError:
             return None
 
 
-class DefaultReplayIdMixin:  # pylint: disable=too-few-public-methods
+class DefaultReplayIdMixin:
     """A mixin class that will return a default, constant replay id if
     there is not replay marker for the given subscription"""
+
     def __init__(self, default_id: int, **kwargs: Any) -> None:
         """
         :param default_id: A replay id
@@ -253,8 +261,7 @@ class DefaultReplayIdMixin:  # pylint: disable=too-few-public-methods
         :return: The default, constant replay id if there is not replay \
         marker for the given subscription
         """
-        marker = await cast(ReplayMarkerStorage, self)\
-            .get_replay_marker(subscription)
+        marker = await cast(ReplayMarkerStorage, self).get_replay_marker(subscription)
         if marker:
             return marker.replay_id
         return self.default_id
@@ -266,28 +273,31 @@ class ConstantReplayId(DefaultReplayIdMixin, ReplayMarkerStorage):
 
     .. note::
 
-        This implementations doesn't actually stores anything for later
+        This implementation doesn't actually store anything for later
         retrieval.
     """
+
     def __repr__(self) -> str:
         """Formal string representation"""
         cls_name = type(self).__name__
         return f"{cls_name}(default_id={reprlib.repr(self.default_id)})"
 
-    async def set_replay_marker(self, subscription: str,
-                                replay_marker: ReplayMarker) -> None:
+    async def set_replay_marker(
+        self, subscription: str, replay_marker: ReplayMarker
+    ) -> None:
         pass
 
-    async def get_replay_marker(self, subscription: str) \
-            -> Optional[ReplayMarker]:
+    async def get_replay_marker(self, subscription: str) -> ReplayMarker | None:
         return None
 
 
 class DefaultMappingStorage(DefaultReplayIdMixin, MappingStorage):
-    """Mapping based replay marker storage which will return a defualt
-    replay id if there is not replay marker for the given subscription """
-    def __init__(self, mapping: MutableMapping[str, ReplayMarker],
-                 default_id: int) -> None:
+    """Mapping based replay marker storage which will return a default
+    replay id if there is not replay marker for the given subscription"""
+
+    def __init__(
+        self, mapping: MutableMapping[str, ReplayMarker], default_id: int
+    ) -> None:
         """
         :param mapping: A MutableMapping object for storing replay markers
         :param default_id: A replay id
@@ -297,5 +307,7 @@ class DefaultMappingStorage(DefaultReplayIdMixin, MappingStorage):
     def __repr__(self) -> str:
         """Formal string representation"""
         cls_name = type(self).__name__
-        return f"{cls_name}(mapping={reprlib.repr(self.mapping)}, " \
-               f"default_id={reprlib.repr(self.default_id)})"
+        return (
+            f"{cls_name}(mapping={reprlib.repr(self.mapping)}, "
+            f"default_id={reprlib.repr(self.default_id)})"
+        )

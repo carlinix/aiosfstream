@@ -1,0 +1,121 @@
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13.0"]
+build-backend = "uv_build"
+
+[project]
+name = "aiosfstream"
+version = "1.2.0"
+description = "Salesforce Streaming API client for asyncio"
+readme = "README.rst"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE.txt"]
+keywords = [
+    "aiohttp",
+    "asyncio",
+    "bayeux",
+    "comet",
+    "cometd",
+    "salesforce",
+    "streaming",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = [
+    "aiocometd>=1.0.0",
+    "aiohttp>=3.1,<4.0",
+]
+
+[[project.authors]]
+name = "Ricardo Carlini Sperandio"
+email = "rcarlini@gmail.com"
+
+[project.urls]
+Documentation = "https://aiosfstream.readthedocs.io/"
+Issues = "https://github.com/carlinix/aiosfstream/issues"
+Repository = "https://github.com/carlinix/aiosfstream"
+
+[dependency-groups]
+build = [
+    "check-wheel-contents>=0.6,<1",
+    "twine>=6,<7",
+]
+docs = [
+    "sphinx>=8.2,<10",
+]
+lint = [
+    "ruff>=0.12,<1",
+]
+test = [
+    "coverage[toml]>=7.10,<8",
+    "pytest>=8.4,<10",
+    "pytest-asyncio>=1.1,<2",
+]
+[tool.uv.sources.aiocometd]
+git = "https://github.com/carlinix/aiocometd.git"
+tag = "1.0.0"
+
+[tool.uv.build-backend]
+module-root = ""
+source-exclude = [
+    "docs/build",
+]
+source-include = [
+    ".readthedocs.yaml",
+    "docs/**",
+    "tests/**",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.4"
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+    "-ra",
+]
+asyncio_mode = "strict"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["aiosfstream"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 88
+src = ["aiosfstream", "tests"]
+target-version = "py311"
+
+[tool.ruff.lint]
+ignore = ["ANN401"]
+select = [
+    "ANN",
+    "ASYNC",
+    "B",
+    "C4",
+    "E",
+    "F",
+    "I",
+    "SIM",
+    "UP",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["ANN"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aiosfstream"]

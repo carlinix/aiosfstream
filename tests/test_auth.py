@@ -1,16 +1,17 @@
-import pytest
 import reprlib
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from aiohttp.client_exceptions import ClientError
 
 from aiosfstream.auth import (
+    SANDBOX_TOKEN_URL,
+    TOKEN_URL,
     AuthenticatorBase,
     ClientCredentialsAuthenticator,
     PasswordAuthenticator,
     RefreshTokenAuthenticator,
-    TOKEN_URL,
-    SANDBOX_TOKEN_URL,
 )
 from aiosfstream.exceptions import AuthenticationError
 
@@ -28,6 +29,7 @@ def authenticator():
 # ---------------------------------------------------------------------
 #  AuthenticatorBase tests
 # ---------------------------------------------------------------------
+
 
 def test_init():
     jd, jl = object(), object()
@@ -78,7 +80,9 @@ async def test_authenticate_success(monkeypatch, authenticator):
 @pytest.mark.asyncio
 async def test_authenticate_non_ok_status_code(authenticator):
     response = {"access_token": "bad"}
-    authenticator._authenticate = AsyncMock(return_value=(HTTPStatus.BAD_REQUEST, response))
+    authenticator._authenticate = AsyncMock(
+        return_value=(HTTPStatus.BAD_REQUEST, response)
+    )
 
     with pytest.raises(AuthenticationError, match="Authentication failed"):
         await authenticator.authenticate()
@@ -117,6 +121,7 @@ def test_token_url_sandbox():
 # ---------------------------------------------------------------------
 #  PasswordAuthenticator tests
 # ---------------------------------------------------------------------
+
 
 @pytest.fixture
 def password_auth():
@@ -178,6 +183,7 @@ def test_password_repr(password_auth):
 #  RefreshTokenAuthenticator tests
 # ---------------------------------------------------------------------
 
+
 @pytest.fixture
 def refresh_auth():
     return RefreshTokenAuthenticator(
@@ -235,6 +241,7 @@ def test_refresh_repr(refresh_auth):
 #  ClientCredentialsAuthenticator tests
 # ---------------------------------------------------------------------
 
+
 @pytest.fixture
 def client_credentials_auth():
     return ClientCredentialsAuthenticator(
@@ -254,8 +261,7 @@ def test_client_credentials_init(client_credentials_auth):
     assert a.instance_url is None
 
 
-def test_client_credentials_token_url_uses_my_domain(
-        client_credentials_auth):
+def test_client_credentials_token_url_uses_my_domain(client_credentials_auth):
     """The whole point of the override: never login/test.salesforce.com."""
     assert client_credentials_auth._token_url == (
         "https://mycompany.my.salesforce.com/services/oauth2/token"
@@ -272,8 +278,7 @@ def test_client_credentials_sandbox_domain_is_just_another_domain():
         domain="mycompany--dev.sandbox.my",
     )
     assert auth._token_url == (
-        "https://mycompany--dev.sandbox.my.salesforce.com"
-        "/services/oauth2/token"
+        "https://mycompany--dev.sandbox.my.salesforce.com/services/oauth2/token"
     )
 
 
@@ -281,17 +286,22 @@ def test_client_credentials_sandbox_domain_is_just_another_domain():
 def test_client_credentials_rejects_empty_domain(domain):
     with pytest.raises(ValueError, match="domain is required"):
         ClientCredentialsAuthenticator(
-            consumer_key="id", consumer_secret="secret", domain=domain)
+            consumer_key="id", consumer_secret="secret", domain=domain
+        )
 
 
-@pytest.mark.parametrize("domain", [
-    "https://mycompany.my.salesforce.com",
-    "http://mycompany.my",
-])
+@pytest.mark.parametrize(
+    "domain",
+    [
+        "https://mycompany.my.salesforce.com",
+        "http://mycompany.my",
+    ],
+)
 def test_client_credentials_rejects_url_domain(domain):
     with pytest.raises(ValueError, match="not a URL"):
         ClientCredentialsAuthenticator(
-            consumer_key="id", consumer_secret="secret", domain=domain)
+            consumer_key="id", consumer_secret="secret", domain=domain
+        )
 
 
 def test_client_credentials_rejects_salesforce_com_suffix():
@@ -299,27 +309,28 @@ def test_client_credentials_rejects_salesforce_com_suffix():
         ClientCredentialsAuthenticator(
             consumer_key="id",
             consumer_secret="secret",
-            domain="mycompany.my.salesforce.com")
+            domain="mycompany.my.salesforce.com",
+        )
 
 
 @pytest.mark.parametrize("domain", ["login", "test"])
 def test_client_credentials_rejects_login_and_test(domain):
     with pytest.raises(ValueError, match="My Domain"):
         ClientCredentialsAuthenticator(
-            consumer_key="id", consumer_secret="secret", domain=domain)
+            consumer_key="id", consumer_secret="secret", domain=domain
+        )
 
 
 def test_client_credentials_strips_trailing_slash():
     auth = ClientCredentialsAuthenticator(
-        consumer_key="id", consumer_secret="secret",
-        domain="  mycompany.my/ ")
+        consumer_key="id", consumer_secret="secret", domain="  mycompany.my/ "
+    )
     assert auth.domain == "mycompany.my"
 
 
 @pytest.mark.asyncio
 @patch("aiosfstream.auth.ClientSession")
-async def test_client_credentials_authenticate(
-        mock_session, client_credentials_auth):
+async def test_client_credentials_authenticate(mock_session, client_credentials_auth):
     status = object()
     response_data = {"ok": True}
     response_obj = MagicMock()
@@ -335,8 +346,7 @@ async def test_client_credentials_authenticate(
     result = await client_credentials_auth._authenticate()
 
     assert result == (status, response_data)
-    mock_session.assert_called_with(
-        json_serialize=client_credentials_auth.json_dumps)
+    mock_session.assert_called_with(json_serialize=client_credentials_auth.json_dumps)
     session.post.assert_awaited_with(
         client_credentials_auth._token_url,
         data={
@@ -352,7 +362,8 @@ async def test_client_credentials_authenticate(
 @pytest.mark.asyncio
 @patch("aiosfstream.auth.ClientSession")
 async def test_client_credentials_sends_no_user_credentials(
-        mock_session, client_credentials_auth):
+    mock_session, client_credentials_auth
+):
     """No username/password may reach the wire; that flow is retired."""
     response_obj = MagicMock()
     response_obj.json = AsyncMock(return_value={})
@@ -375,14 +386,17 @@ async def test_client_credentials_sends_no_user_credentials(
 @pytest.mark.asyncio
 @patch("aiosfstream.auth.ClientSession")
 async def test_client_credentials_populates_instance_url(
-        mock_session, client_credentials_auth):
+    mock_session, client_credentials_auth
+):
     """Client.open() builds the CometD URL from instance_url."""
     response_obj = MagicMock()
-    response_obj.json = AsyncMock(return_value={
-        "access_token": "token",
-        "token_type": "Bearer",
-        "instance_url": "https://mycompany.my.salesforce.com",
-    })
+    response_obj.json = AsyncMock(
+        return_value={
+            "access_token": "token",
+            "token_type": "Bearer",
+            "instance_url": "https://mycompany.my.salesforce.com",
+        }
+    )
     response_obj.status = HTTPStatus.OK
 
     session = MagicMock()
@@ -396,7 +410,8 @@ async def test_client_credentials_populates_instance_url(
     assert client_credentials_auth.access_token == "token"
     assert client_credentials_auth.token_type == "Bearer"
     assert client_credentials_auth.instance_url == (
-        "https://mycompany.my.salesforce.com")
+        "https://mycompany.my.salesforce.com"
+    )
 
 
 def test_client_credentials_repr_hides_secret(client_credentials_auth):

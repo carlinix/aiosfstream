@@ -1,21 +1,27 @@
 """Client class implementation"""
-from collections import abc
-from http import HTTPStatus
-import logging
+
 import json
-from typing import Optional, Union, MutableMapping, AsyncIterator, Type, cast
-from types import TracebackType
+import logging
+from collections import abc
+from collections.abc import AsyncIterator, MutableMapping
 from enum import Enum, auto, unique
+from http import HTTPStatus
+from types import TracebackType
+from typing import cast
 
 from aiocometd import Client as CometdClient
 from aiocometd.exceptions import ServerError
-from aiocometd.typing_utils import JsonObject, JsonLoader, JsonDumper
+from aiocometd.typing_utils import JsonDumper, JsonLoader, JsonObject
 
 from aiosfstream.auth import AuthenticatorBase, PasswordAuthenticator
-from aiosfstream.replay import ReplayOption, ReplayMarkerStorage, \
-    MappingStorage, ConstantReplayId, ReplayMarker
 from aiosfstream.exceptions import translate_errors, translate_errors_context
-
+from aiosfstream.replay import (
+    ConstantReplayId,
+    MappingStorage,
+    ReplayMarker,
+    ReplayMarkerStorage,
+    ReplayOption,
+)
 
 COMETD_PATH = "cometd"
 # Kept in step with simple_salesforce.api.DEFAULT_API_VERSION so that the
@@ -23,14 +29,13 @@ COMETD_PATH = "cometd"
 # Bumping simple-salesforce means revisiting this constant.
 API_VERSION = "59.0"
 LOGGER = logging.getLogger(__name__)
-ReplayParameter = Union[ReplayOption,
-                        ReplayMarkerStorage,
-                        MutableMapping[str, ReplayMarker]]
+ReplayParameter = ReplayOption | ReplayMarkerStorage | MutableMapping[str, ReplayMarker]
 
 
 @unique
 class ReplayMarkerStoragePolicy(Enum):
     """Defines the available replay marker storage policies"""
+
     #: Store the replay marker of messages automatically, as soon as they're
     #: received.
     #: The downside of this approach is that the replay marker of a message
@@ -44,17 +49,22 @@ class ReplayMarkerStoragePolicy(Enum):
 
 class Client(CometdClient):
     """Salesforce Streaming API client"""
+
     @translate_errors
-    def __init__(self, authenticator: AuthenticatorBase, *,
-                 replay: ReplayParameter = ReplayOption.NEW_EVENTS,
-                 replay_fallback: Optional[ReplayOption] = None,
-                 replay_storage_policy: ReplayMarkerStoragePolicy
-                 = ReplayMarkerStoragePolicy.AUTOMATIC,
-                 connection_timeout: Union[int, float] = 10.0,
-                 max_pending_count: int = 100,
-                 json_dumps: JsonDumper = json.dumps,
-                 json_loads: JsonLoader = json.loads,
-                 ):
+    def __init__(
+        self,
+        authenticator: AuthenticatorBase,
+        *,
+        replay: ReplayParameter = ReplayOption.NEW_EVENTS,
+        replay_fallback: ReplayOption | None = None,
+        replay_storage_policy: ReplayMarkerStoragePolicy = (
+            ReplayMarkerStoragePolicy.AUTOMATIC
+        ),
+        connection_timeout: int | float = 10.0,
+        max_pending_count: int = 100,
+        json_dumps: JsonDumper = json.dumps,
+        json_loads: JsonLoader = json.loads,
+    ) -> None:
         """
         :param authenticator: An authenticator object
         :param replay: A ReplayOption or an object capable of storing replay \
@@ -82,8 +92,9 @@ class Client(CometdClient):
         :func:`json.loads`
         """
         if not isinstance(authenticator, AuthenticatorBase):
-            raise TypeError(f"authenticator should be an instance of "
-                            f"{AuthenticatorBase.__name__}.")
+            raise TypeError(
+                f"authenticator should be an instance of {AuthenticatorBase.__name__}."
+            )
         #: Replay fallback policy, for when a subscribe
         #: operation fails because a replay id was specified for a message
         #: outside the retention window
@@ -91,8 +102,10 @@ class Client(CometdClient):
 
         replay_storage = self.create_replay_storage(replay)
         if not isinstance(replay_storage, ReplayMarkerStorage):
-            raise TypeError("{!r} is not a valid type for the replay "
-                            "parameter.".format(type(replay).__name__))
+            raise TypeError(
+                f"{type(replay).__name__!r} is not a valid type for the replay "
+                "parameter."
+            )
         #: :obj:`ReplayMarkerStorage` instance capable of storing
         #: :py:obj:`ReplayMarker` objects
         self.replay_storage: ReplayMarkerStorage = replay_storage
@@ -101,10 +114,11 @@ class Client(CometdClient):
         #: messages will be stored
         self.replay_storage_policy = replay_storage_policy
 
-        LOGGER.debug("Client created with replay storage: %r, "
-                     "replay fallback: %r",
-                     self.replay_storage,
-                     self.replay_fallback)
+        LOGGER.debug(
+            "Client created with replay storage: %r, replay fallback: %r",
+            self.replay_storage,
+            self.replay_fallback,
+        )
 
         # update the JSON serializer/deserializer of the authenticator with
         # the callables passed to the client
@@ -112,14 +126,15 @@ class Client(CometdClient):
         authenticator.json_loads = json_loads
 
         # set authenticator as the auth extension
-        super().__init__("",
-                         auth=authenticator,
-                         extensions=[self.replay_storage],
-                         connection_timeout=connection_timeout,
-                         max_pending_count=max_pending_count,
-                         json_dumps=json_dumps,
-                         json_loads=json_loads,
-                         )
+        super().__init__(
+            "",
+            auth=authenticator,
+            extensions=[self.replay_storage],
+            connection_timeout=connection_timeout,
+            max_pending_count=max_pending_count,
+            json_dumps=json_dumps,
+            json_loads=json_loads,
+        )
 
     @translate_errors
     async def open(self) -> None:
@@ -139,8 +154,9 @@ class Client(CometdClient):
         # authenticate
         LOGGER.debug("Authenticating using %r.", authenticator)
         await authenticator.authenticate()
-        LOGGER.info("Successful authentication. Instance URL: %r.",
-                    authenticator.instance_url)
+        LOGGER.info(
+            "Successful authentication. Instance URL: %r.", authenticator.instance_url
+        )
         # construct the URL of the CometD endpoint using the instance URL
         self.url = self.get_cometd_url(cast(str, authenticator.instance_url))
         # open the CometD client
@@ -155,12 +171,17 @@ class Client(CometdClient):
         try:
             await super().subscribe(channel)
         except ServerError as error:
-            if (self.replay_fallback and self.replay_storage and
-                    error.error_code == HTTPStatus.BAD_REQUEST):
-                LOGGER.warning("Subscription failed with message: %r, "
-                               "retrying subscription with %r.",
-                               error.error_message,
-                               self.replay_fallback)
+            if (
+                self.replay_fallback
+                and self.replay_storage
+                and error.error_code == HTTPStatus.BAD_REQUEST
+            ):
+                LOGGER.warning(
+                    "Subscription failed with message: %r, "
+                    "retrying subscription with %r.",
+                    error.error_message,
+                    self.replay_fallback,
+                )
                 self.replay_storage.replay_fallback = self.replay_fallback
                 await super().subscribe(channel)
             else:
@@ -234,9 +255,7 @@ class Client(CometdClient):
         related error
         """
         with translate_errors_context():
-            # pylint: disable=not-an-iterable
             async for message in super().__aiter__():
-                # pylint: enable=not-an-iterable
                 yield message
 
     @translate_errors
@@ -244,14 +263,18 @@ class Client(CometdClient):
         return cast("Client", await super().__aenter__())
 
     @translate_errors
-    async def __aexit__(self, exc_type: Type[BaseException],
-                        exc_val: BaseException,
-                        exc_tb: TracebackType) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException],
+        exc_val: BaseException,
+        exc_tb: TracebackType,
+    ) -> None:
         return await super().__aexit__(exc_type, exc_val, exc_tb)
 
     @staticmethod
-    def create_replay_storage(replay_param: ReplayParameter) \
-            -> Optional[ReplayMarkerStorage]:
+    def create_replay_storage(
+        replay_param: ReplayParameter,
+    ) -> ReplayMarkerStorage | None:
         """Create a :obj:`ReplayMarkerStorage` object based from *replay_param*
 
         :param replay_param: One of the supported *replay_param* type objects
@@ -285,18 +308,25 @@ class SalesforceStreamingClient(Client):
     class with a different
     :obj:`Authenticator <aiosfstream.auth.AuthenticatorBase>`
     """
-    def __init__(self, *,  # pylint: disable=too-many-locals
-                 consumer_key: str, consumer_secret: str,
-                 username: str, password: str,
-                 replay: ReplayParameter = ReplayOption.NEW_EVENTS,
-                 replay_fallback: Optional[ReplayOption] = None,
-                 replay_storage_policy: ReplayMarkerStoragePolicy
-                 = ReplayMarkerStoragePolicy.AUTOMATIC,
-                 connection_timeout: Union[int, float] = 10.0,
-                 max_pending_count: int = 100, sandbox: bool = False,
-                 json_dumps: JsonDumper = json.dumps,
-                 json_loads: JsonLoader = json.loads,
-                 ):
+
+    def __init__(
+        self,
+        *,
+        consumer_key: str,
+        consumer_secret: str,
+        username: str,
+        password: str,
+        replay: ReplayParameter = ReplayOption.NEW_EVENTS,
+        replay_fallback: ReplayOption | None = None,
+        replay_storage_policy: ReplayMarkerStoragePolicy = (
+            ReplayMarkerStoragePolicy.AUTOMATIC
+        ),
+        connection_timeout: int | float = 10.0,
+        max_pending_count: int = 100,
+        sandbox: bool = False,
+        json_dumps: JsonDumper = json.dumps,
+        json_loads: JsonLoader = json.loads,
+    ) -> None:
         """
         :param consumer_key: Consumer key from the Salesforce connected \
         app definition

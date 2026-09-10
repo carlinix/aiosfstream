@@ -1,6 +1,19 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+- Replace ``setup.py``, Tox, Flake8, Pylint, and Travis CI with a centralized
+  ``pyproject.toml``, uv, Ruff, and GitHub Actions workflows.
+- Require Python 3.11 or newer, test Python 3.11 through 3.14, and add
+  cross-platform checks on macOS and Windows.
+- Validate distribution metadata and wheel contents, smoke-test the installed
+  wheel, and provide an opt-in Trusted Publishing release workflow.
+- Use the maintained ``aiocometd`` 1.0.0 source from the ``carlinix``
+  repository for reproducible development and CI environments.
+- Update project ownership to Ricardo Carlini Sperandio from 2025 onward.
+
 0.5.0 (2019-03-08)
 ------------------
 

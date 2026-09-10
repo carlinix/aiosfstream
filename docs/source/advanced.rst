@@ -142,7 +142,7 @@ Subscription errors
 Events outside the 24-hour retention period are discarded. If you're using some
 form of :py:obj:`ReplayMarkerStorage` or a
 :py:obj:`~collections.abc.MutableMapping` object, and if you're client doesn't
-connects to the Streaming API for more then 24 hours, then it's possible that
+connects to the Streaming API for more than 24 hours, then it's possible that
 the client will try to continue retrieving messages from a very old message
 outside the retention window. Since Salesforce no longer has the event message
 that the client would try to retrieve, it would raise
@@ -291,7 +291,7 @@ reconnect to the server.
         print("Connection is lost with the server. "
               "Couldn't reconnect in 60 seconds.")
 
-The defaul value is ``10`` seconds. If you pass ``None`` as the
+The default value is ``10`` seconds. If you pass ``None`` as the
 ``connection_timeout`` value, then the client will keep on trying indefinitely.
 
 Prefetching
@@ -328,7 +328,7 @@ JSON encoder/decoder
 --------------------
 
 Besides the standard :obj:`json` module, many third party libraries offer
-JSON serialization/deserilization functionality. To use a different library for
+JSON serialization/deserialization functionality. To use a different library for
 handling JSON data types, you can specify the callable to use for serialization
 with the ``json_dumps`` and the callable for deserialization with the
 ``json_loads`` parameters of the :py:obj:`Client`.

@@ -107,7 +107,7 @@ method.
         password="<password>"
     )
     await client.open()
-    # subscribe and receive messsages...
+    # Subscribe and receive messages.
     await client.close()
 
 :py:class:`Client` objects can be also used as asynchronous context managers.
@@ -119,7 +119,7 @@ method.
             consumer_secret="<consumer secret>",
             username="<username>",
             password="<password>") as client:
-        # subscribe and receive messsages...
+        # Subscribe and receive messages.
 
 Channels
 --------
@@ -137,8 +137,8 @@ documentation.
 Subscriptions
 -------------
 
-To receive notification messages the client must subscribe to the channels
-it's interested in.
+To receive notification messages, the client must subscribe to the relevant
+channels.
 
 .. code-block:: python
 
@@ -157,9 +157,8 @@ The current set of subscriptions can be obtained from the
 Receiving messages
 ------------------
 
-To receive messages broadcasted by Salesforce after
-`subscribing <Subscriptions_>`_ to these `channels <Channels_>`_ the
-:py:meth:`~Client.receive` method should be used.
+After subscribing to the relevant channels, call :py:meth:`~Client.receive`
+to receive messages broadcast by Salesforce.
 
 .. code-block:: python
 

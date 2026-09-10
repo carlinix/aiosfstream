@@ -69,6 +69,38 @@ You can get a refresh token using several different `authentication techniques
 supported by Salesforce <sf_auth_>`_, the most commonly used one is probably
 the `web server authentication flow <web_server_auth_>`_.
 
+JWT Bearer authentication
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The `JWT Bearer flow <jwt_auth_>`_ is the flow Salesforce recommends for
+server-to-server integrations. It sends neither a password nor a consumer
+secret. Instead, the client signs a short lived assertion with an RSA private
+key, whose certificate is uploaded to the app definition, and the user named
+by ``username`` has to be pre-authorized for that app.
+
+Signing requires `PyJWT <pyjwt_>`_ with its cryptography backend, which is not
+installed by default::
+
+    pip install aiosfstream[jwt]
+
+.. code-block:: python
+
+    auth = JWTBearerAuthenticator(
+        consumer_key="<consumer key>",
+        username="<username>",
+        private_key_path="/path/to/server.key"
+    )
+    client = Client(auth)
+
+The key can also be passed directly as a PEM formatted string, with the
+``private_key`` parameter, which is the more convenient option when it is
+read from a secret store rather than from a file.
+
+To authenticate against a sandbox org, assign ``True`` to the ``sandbox``
+parameter. Unlike the username-password flow, no suffix has to be added to
+the username: ``username`` names the sandbox user directly, and sandbox
+usernames already carry the name of their sandbox.
+
 Authentication on sandbox orgs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

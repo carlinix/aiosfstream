@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "aiosfstream"
-version = "1.2.0"
+version = "1.3.0"
 description = "Salesforce Streaming API client for asyncio"
 readme = "README.rst"
 requires-python = ">=3.11"
@@ -37,6 +37,11 @@ dependencies = [
     "aiohttp>=3.1,<4.0",
 ]
 
+[project.optional-dependencies]
+jwt = [
+    "pyjwt[crypto]>=2.8,<3",
+]
+
 [[project.authors]]
 name = "Ricardo Carlini Sperandio"
 email = "rcarlini@gmail.com"
@@ -63,6 +68,7 @@ publish = [
 ]
 test = [
     "coverage[toml]>=7.10,<8",
+    "pyjwt[crypto]>=2.8,<3",
     "pytest>=8.4,<10",
     "pytest-asyncio>=1.1,<2",
 ]

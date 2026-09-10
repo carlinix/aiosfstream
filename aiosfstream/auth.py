@@ -115,15 +115,23 @@ class AuthenticatorBase(AuthExtension):
             raise AuthenticationError("Network request failed") from error
 
         if status_code != HTTPStatus.OK:
-            self.access_token = None
-            self.token_type = None
-            self.instance_url = None
-            self.id = None
-            self.signature = None
-            self.issued_at = None
+            self._clear_credentials()
             raise AuthenticationError("Authentication failed", response_data)
 
         self.__dict__.update(response_data)
+
+    def _clear_credentials(self) -> None:
+        """Discard the values obtained from a previous authentication
+
+        Called when an authentication attempt fails, so that a stale session
+        can't outlive it and keep getting signed into outgoing requests.
+        """
+        self.access_token = None
+        self.token_type = None
+        self.instance_url = None
+        self.id = None
+        self.signature = None
+        self.issued_at = None
 
     @abstractmethod
     async def _authenticate(self) -> tuple[int, JsonObject]:

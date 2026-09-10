@@ -119,13 +119,20 @@ jobs:
       - name: Install Python
         run: uv python install 3.13
       - name: Install build dependencies
-        run: uv sync --no-default-groups --group build --python 3.13
+        run: >-
+          uv sync --no-default-groups --group build --group docs --python 3.13
       - name: Build distributions
         run: uv build --no-sources
       - name: Validate metadata
         run: uv run --no-sync twine check --strict dist/*
       - name: Validate wheel contents
         run: uv run --no-sync check-wheel-contents dist/*.whl
+      - name: Build documentation from source distribution
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir -p extracted-sdist
+          tar -xzf "$GITHUB_WORKSPACE"/dist/*.tar.gz -C extracted-sdist
+          uv run --project "$GITHUB_WORKSPACE" --no-sync sphinx-build -E -W --keep-going -b html extracted-sdist/*/docs/source sdist-docs
       - name: Smoke-test the installed wheel
         working-directory: ${{ runner.temp }}
         run: |

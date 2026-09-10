@@ -73,6 +73,7 @@ source-exclude = [
 ]
 source-include = [
     ".readthedocs.yaml",
+    "DESCRIPTION.rst",
     "docs/**",
     "tests/**",
 ]

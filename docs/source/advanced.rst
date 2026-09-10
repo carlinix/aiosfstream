@@ -141,8 +141,8 @@ Subscription errors
 
 Events outside the 24-hour retention period are discarded. If you're using some
 form of :py:obj:`ReplayMarkerStorage` or a
-:py:obj:`~collections.abc.MutableMapping` object, and if you're client doesn't
-connects to the Streaming API for more than 24 hours, then it's possible that
+:py:obj:`~collections.abc.MutableMapping` object, and if your client doesn't
+connect to the Streaming API for more than 24 hours, then it's possible that
 the client will try to continue retrieving messages from a very old message
 outside the retention window. Since Salesforce no longer has the event message
 that the client would try to retrieve, it would raise

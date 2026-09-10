@@ -10,9 +10,11 @@
 .. _Bayeux: https://docs.cometd.org/current/reference/#_bayeux
 .. _ext: https://docs.cometd.org/current/reference/#_bayeux_ext
 .. _password_auth: https://help.salesforce.com/articleView?id=remoteaccess_oauth_username_password_flow.htm&type=5
+.. _jwt_auth: https://help.salesforce.com/s/articleView?id=xcloud.remoteaccess_oauth_jwt_flow.htm&type=5
 .. _refresh_auth: https://help.salesforce.com/articleView?id=remoteaccess_oauth_refresh_token_flow.htm&type=5
 .. _connected_app: https://help.salesforce.com/articleView?id=connected_app_overview.htm&type=5
 .. _sf_auth: https://help.salesforce.com/articleView?id=remoteaccess_authenticate_overview.htm
 .. _web_server_auth: https://help.salesforce.com/articleView?id=remoteaccess_oauth_web_server_flow.htm&type=5
+.. _pyjwt: https://pyjwt.readthedocs.io/
 .. _PlatformEvents: https://developer.salesforce.com/docs/atlas.en-us.platform_events.meta/platform_events/platform_events_intro.htm
 .. _ChangeDataCapture: https://developer.salesforce.com/docs/atlas.en-us.change_data_capture.meta/change_data_capture/cdc_intro.htm

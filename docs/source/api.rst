@@ -30,6 +30,9 @@ Authenticators
 .. autoclass:: ClientCredentialsAuthenticator
     :members:
 
+.. autoclass:: JWTBearerAuthenticator
+    :members:
+
 
 Replay
 ------

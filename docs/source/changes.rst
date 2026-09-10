@@ -4,6 +4,9 @@ Changelog
 Unreleased
 ----------
 
+- Add ``JWTBearerAuthenticator`` for the OAuth 2.0 JWT Bearer flow, the
+  Salesforce recommended server-to-server flow. Signing needs the new ``jwt``
+  extra: ``pip install aiosfstream[jwt]``.
 - Replace ``setup.py``, Tox, Flake8, Pylint, and Travis CI with a centralized
   ``pyproject.toml``, uv, Ruff, and GitHub Actions workflows.
 - Require Python 3.11 or newer, test Python 3.11 through 3.14, and add

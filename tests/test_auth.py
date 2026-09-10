@@ -1,15 +1,25 @@
 import reprlib
+import time
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import jwt
 import pytest
 from aiohttp.client_exceptions import ClientError
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from aiosfstream.auth import (
+    AUDIENCE_URL,
+    JWT_ALGORITHM,
+    JWT_BEARER_GRANT_TYPE,
+    JWT_EXPIRATION,
+    SANDBOX_AUDIENCE_URL,
     SANDBOX_TOKEN_URL,
     TOKEN_URL,
     AuthenticatorBase,
     ClientCredentialsAuthenticator,
+    JWTBearerAuthenticator,
     PasswordAuthenticator,
     RefreshTokenAuthenticator,
 )
@@ -423,3 +433,303 @@ def test_client_credentials_repr_hides_secret(client_credentials_auth):
         f"consumer_secret={reprlib.repr(a.client_secret)}, "
         f"domain={reprlib.repr(a.domain)})"
     )
+
+
+# ---------------------------------------------------------------------
+#  JWTBearerAuthenticator tests
+# ---------------------------------------------------------------------
+
+# Generated once: 2048 bit key generation is slow enough to notice when
+# repeated for every test in this section.
+PRIVATE_KEY_OBJECT = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+PRIVATE_KEY = PRIVATE_KEY_OBJECT.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption(),
+).decode()
+PUBLIC_KEY = (
+    PRIVATE_KEY_OBJECT.public_key()
+    .public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    .decode()
+)
+
+
+def decode_assertion(assertion, audience=AUDIENCE_URL):
+    return jwt.decode(
+        assertion, PUBLIC_KEY, algorithms=[JWT_ALGORITHM], audience=audience
+    )
+
+
+def post_session(mock_session, response_data=None, status=HTTPStatus.OK):
+    response_obj = MagicMock()
+    response_obj.json = AsyncMock(return_value=response_data or {})
+    response_obj.status = status
+
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock()
+    session.post = AsyncMock(return_value=response_obj)
+    mock_session.return_value = session
+    return session
+
+
+@pytest.fixture
+def jwt_auth():
+    return JWTBearerAuthenticator(
+        consumer_key="id",
+        username="user@example.com",
+        private_key=PRIVATE_KEY,
+    )
+
+
+def test_jwt_init(jwt_auth):
+    assert jwt_auth.client_id == "id"
+    assert jwt_auth.username == "user@example.com"
+    assert jwt_auth.private_key == PRIVATE_KEY
+    assert jwt_auth.audience == AUDIENCE_URL
+    assert jwt_auth.expiration == JWT_EXPIRATION
+    assert jwt_auth.access_token is None
+    assert jwt_auth.token_type is None
+
+
+def test_jwt_reads_private_key_from_path(tmp_path):
+    key_file = tmp_path / "server.key"
+    key_file.write_text(PRIVATE_KEY)
+
+    auth = JWTBearerAuthenticator(
+        consumer_key="id",
+        username="user@example.com",
+        private_key_path=key_file,
+    )
+
+    assert auth.private_key == PRIVATE_KEY.encode()
+
+
+def test_jwt_missing_key_path_fails_on_init(tmp_path):
+    """A bad key path must not surface as an authentication failure later."""
+    with pytest.raises(OSError):
+        JWTBearerAuthenticator(
+            consumer_key="id",
+            username="user@example.com",
+            private_key_path=tmp_path / "absent.key",
+        )
+
+
+def test_jwt_rejects_no_key():
+    with pytest.raises(ValueError, match="exactly one of private_key"):
+        JWTBearerAuthenticator(consumer_key="id", username="user@example.com")
+
+
+def test_jwt_rejects_both_keys(tmp_path):
+    with pytest.raises(ValueError, match="exactly one of private_key"):
+        JWTBearerAuthenticator(
+            consumer_key="id",
+            username="user@example.com",
+            private_key=PRIVATE_KEY,
+            private_key_path=tmp_path / "server.key",
+        )
+
+
+@pytest.mark.parametrize("expiration", [0, -1])
+def test_jwt_rejects_non_positive_expiration(expiration):
+    with pytest.raises(ValueError, match="must be positive"):
+        JWTBearerAuthenticator(
+            consumer_key="id",
+            username="user@example.com",
+            private_key=PRIVATE_KEY,
+            expiration=expiration,
+        )
+
+
+def test_jwt_without_pyjwt_installed():
+    with (
+        patch("aiosfstream.auth.jwt", None),
+        pytest.raises(ImportError, match=r"aiosfstream\[jwt\]"),
+    ):
+        JWTBearerAuthenticator(
+            consumer_key="id",
+            username="user@example.com",
+            private_key=PRIVATE_KEY,
+        )
+
+
+def test_jwt_audience_defaults_to_production():
+    auth = JWTBearerAuthenticator(
+        consumer_key="id", username="user@example.com", private_key=PRIVATE_KEY
+    )
+    assert auth.audience == AUDIENCE_URL
+    assert auth._token_url == TOKEN_URL
+
+
+def test_jwt_audience_follows_sandbox_flag():
+    """The aud claim and the token endpoint must name the same org."""
+    auth = JWTBearerAuthenticator(
+        consumer_key="id",
+        username="user@example.com",
+        private_key=PRIVATE_KEY,
+        sandbox=True,
+    )
+    assert auth.audience == SANDBOX_AUDIENCE_URL
+    assert auth._token_url == SANDBOX_TOKEN_URL
+
+
+def test_jwt_audience_override():
+    """Experience Cloud sites are addressed by their own URL."""
+    auth = JWTBearerAuthenticator(
+        consumer_key="id",
+        username="user@example.com",
+        private_key=PRIVATE_KEY,
+        audience="https://site.force.com/customers",
+    )
+    assert auth.audience == "https://site.force.com/customers"
+
+
+def test_jwt_assertion_claims(jwt_auth):
+    before = int(time.time())
+
+    claims = decode_assertion(jwt_auth._create_assertion())
+
+    assert claims["iss"] == "id"
+    assert claims["sub"] == "user@example.com"
+    assert claims["aud"] == AUDIENCE_URL
+    assert before + JWT_EXPIRATION <= claims["exp"] <= int(time.time()) + JWT_EXPIRATION
+
+
+def test_jwt_assertion_is_signed_with_the_private_key(jwt_auth):
+    other_key = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+
+    with pytest.raises(jwt.InvalidSignatureError):
+        jwt.decode(
+            jwt_auth._create_assertion(),
+            other_key,
+            algorithms=[JWT_ALGORITHM],
+            audience=AUDIENCE_URL,
+        )
+
+
+def test_jwt_assertion_uses_a_custom_expiration():
+    auth = JWTBearerAuthenticator(
+        consumer_key="id",
+        username="user@example.com",
+        private_key=PRIVATE_KEY,
+        expiration=30,
+    )
+    before = int(time.time())
+
+    claims = decode_assertion(auth._create_assertion())
+
+    assert before + 30 <= claims["exp"] <= int(time.time()) + 30
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_jwt_authenticate(mock_session, jwt_auth):
+    response_data = {"ok": True}
+    session = post_session(mock_session, response_data)
+
+    status, data = await jwt_auth._authenticate()
+
+    assert (status, data) == (HTTPStatus.OK, response_data)
+    mock_session.assert_called_with(json_serialize=jwt_auth.json_dumps)
+    session.post.assert_awaited_once()
+    (url,) = session.post.await_args.args
+    assert url == jwt_auth._token_url
+    sent = session.post.await_args.kwargs["data"]
+    assert sent["grant_type"] == JWT_BEARER_GRANT_TYPE
+    assert decode_assertion(sent["assertion"])["iss"] == jwt_auth.client_id
+    session.__aenter__.assert_awaited()
+    session.__aexit__.assert_awaited()
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_jwt_sends_no_secret_and_no_password(mock_session, jwt_auth):
+    """The point of the flow: only a signed assertion goes over the wire."""
+    session = post_session(mock_session)
+
+    await jwt_auth._authenticate()
+
+    sent = session.post.await_args.kwargs["data"]
+    assert set(sent) == {"grant_type", "assertion"}
+    assert PRIVATE_KEY not in sent["assertion"]
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_jwt_signs_a_fresh_assertion_per_attempt(mock_session, jwt_auth):
+    """A re-authentication after an expired token must not replay the old one."""
+    session = post_session(mock_session)
+
+    await jwt_auth._authenticate()
+    first = session.post.await_args.kwargs["data"]["assertion"]
+    jwt_auth.expiration += 1
+    await jwt_auth._authenticate()
+    second = session.post.await_args.kwargs["data"]["assertion"]
+
+    assert first != second
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_jwt_populates_instance_url(mock_session, jwt_auth):
+    """Client.open() builds the CometD URL from instance_url."""
+    post_session(
+        mock_session,
+        {
+            "access_token": "token",
+            "token_type": "Bearer",
+            "instance_url": "https://mycompany.my.salesforce.com",
+            "id": "id_url",
+            "scope": "api",
+        },
+    )
+
+    await jwt_auth.authenticate()
+
+    assert jwt_auth.access_token == "token"
+    assert jwt_auth.token_type == "Bearer"
+    assert jwt_auth.instance_url == "https://mycompany.my.salesforce.com"
+
+    headers = {}
+    await jwt_auth.outgoing([], headers)
+    assert headers["Authorization"] == "Bearer token"
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_jwt_authentication_failure(mock_session, jwt_auth):
+    post_session(
+        mock_session,
+        {"error": "invalid_grant", "error_description": "user hasn't approved"},
+        status=HTTPStatus.BAD_REQUEST,
+    )
+
+    with pytest.raises(AuthenticationError, match="Authentication failed"):
+        await jwt_auth.authenticate()
+
+    assert jwt_auth.access_token is None
+    assert jwt_auth.token_type is None
+
+
+def test_jwt_repr_hides_the_private_key(jwt_auth):
+    result = repr(jwt_auth)
+    cls = type(jwt_auth).__name__
+
+    assert result == (
+        f"{cls}(consumer_key={reprlib.repr(jwt_auth.client_id)}, "
+        f"username={reprlib.repr(jwt_auth.username)}, "
+        f"audience={reprlib.repr(jwt_auth.audience)})"
+    )
+    assert "PRIVATE KEY" not in result
+    assert PRIVATE_KEY.splitlines()[1][:16] not in result

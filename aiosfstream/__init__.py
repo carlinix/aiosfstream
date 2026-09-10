@@ -5,6 +5,7 @@ from importlib.metadata import version as distribution_version
 
 from aiosfstream.auth import (
     ClientCredentialsAuthenticator,
+    JWTBearerAuthenticator,
     PasswordAuthenticator,
     RefreshTokenAuthenticator,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "ClientCredentialsAuthenticator",
     "ConstantReplayId",
     "DefaultMappingStorage",
+    "JWTBearerAuthenticator",
     "MappingStorage",
     "PasswordAuthenticator",
     "RefreshTokenAuthenticator",

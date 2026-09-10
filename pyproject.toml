@@ -57,6 +57,10 @@ docs = [
 lint = [
     "ruff>=0.12,<1",
 ]
+publish = [
+    "keyrings.google-artifactregistry-auth>=1.1,<2",
+    "twine>=6,<7",
+]
 test = [
     "coverage[toml]>=7.10,<8",
     "pytest>=8.4,<10",

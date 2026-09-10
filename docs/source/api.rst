@@ -27,6 +27,9 @@ Authenticators
 .. autoclass:: RefreshTokenAuthenticator
     :members:
 
+.. autoclass:: ClientCredentialsAuthenticator
+    :members:
+
 
 Replay
 ------

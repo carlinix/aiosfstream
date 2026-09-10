@@ -1,19 +1,20 @@
-import pytest
 import reprlib
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from aiocometd.constants import MetaChannel
+
+from aiosfstream.exceptions import ReplayError
 from aiosfstream.replay import (
-    ReplayMarkerStorage,
-    ReplayMarker,
-    MappingStorage,
     ConstantReplayId,
     DefaultMappingStorage,
     DefaultReplayIdMixin,
+    MappingStorage,
+    ReplayMarker,
+    ReplayMarkerStorage,
     ReplayMarkerStorageContextManager,
 )
-from aiosfstream.exceptions import ReplayError
 
 
 class ReplayMarkerStorageStub(ReplayMarkerStorage):
@@ -100,7 +101,7 @@ async def test_insert_replay_id_with_replay_fallback(replay_storage):
 
 
 def test_get_message_date_variants(replay_storage):
-    date = datetime.now(timezone.utc).isoformat()
+    date = datetime.now(UTC).isoformat()
 
     push_topic = {
         "channel": "/foo/bar",
@@ -134,7 +135,7 @@ def test_get_message_date_variants(replay_storage):
 async def test_extract_replay_id_on_no_previous_id(replay_storage):
     replay_storage.set_replay_marker = AsyncMock()
     replay_storage.get_replay_marker = AsyncMock(return_value=None)
-    date = datetime.now(timezone.utc).isoformat()
+    date = datetime.now(UTC).isoformat()
     replay_storage.get_message_date = MagicMock(return_value=date)
 
     message = {
@@ -150,11 +151,11 @@ async def test_extract_replay_id_on_no_previous_id(replay_storage):
 async def test_extract_replay_id_on_previous_newer(replay_storage):
     replay_storage.set_replay_marker = AsyncMock()
     prev_marker = ReplayMarker(
-        date=(datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        date=(datetime.now(UTC) + timedelta(days=1)).isoformat(),
         replay_id="newer_id",
     )
     replay_storage.get_replay_marker = AsyncMock(return_value=prev_marker)
-    date = datetime.now(timezone.utc).isoformat()
+    date = datetime.now(UTC).isoformat()
     replay_storage.get_message_date = MagicMock(return_value=date)
 
     message = {
@@ -175,6 +176,7 @@ def test_call_returns_context_manager(replay_storage):
 
 
 # ----- MappingStorage tests -----
+
 
 @pytest.mark.asyncio
 async def test_mapping_storage_set_and_get():

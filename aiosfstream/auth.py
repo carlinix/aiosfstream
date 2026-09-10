@@ -1,31 +1,31 @@
-"""Authenticatior class implementations"""
+"""Authenticator class implementations"""
+
+import json
+import reprlib
 from abc import abstractmethod
 from http import HTTPStatus
-import reprlib
-import json
-from typing import Optional, Tuple
 
 from aiocometd import AuthExtension
-from aiocometd.typing_utils import JsonObject, JsonLoader, JsonDumper, Payload, \
-    Headers
+from aiocometd.typing_utils import Headers, JsonDumper, JsonLoader, JsonObject, Payload
 from aiohttp import ClientSession
 from aiohttp.client_exceptions import ClientError
 
 from aiosfstream.exceptions import AuthenticationError
 
-
 TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 SANDBOX_TOKEN_URL = "https://test.salesforce.com/services/oauth2/token"
 
 
-# pylint: disable=too-many-instance-attributes
-
 class AuthenticatorBase(AuthExtension):
     """Abstract base class to serve as a base for implementing concrete
     authenticators"""
-    def __init__(self, sandbox: bool = False,
-                 json_dumps: JsonDumper = json.dumps,
-                 json_loads: JsonLoader = json.loads) -> None:
+
+    def __init__(
+        self,
+        sandbox: bool = False,
+        json_dumps: JsonDumper = json.dumps,
+        json_loads: JsonLoader = json.loads,
+    ) -> None:
         """
         :param sandbox: Marks whether the authentication has to be done \
         for a sandbox org or for a production org
@@ -38,20 +38,20 @@ class AuthenticatorBase(AuthExtension):
         #: or for a production org
         self._sandbox = sandbox
         #: Salesforce session ID that can be used with the web services API
-        self.access_token: Optional[str] = None
+        self.access_token: str | None = None
         #: Value is Bearer for all responses that include an access token
-        self.token_type: Optional[str] = None
+        self.token_type: str | None = None
         #: A URL indicating the instance of the user’s org
-        self.instance_url: Optional[str] = None
+        self.instance_url: str | None = None
         #: Identity URL that can be used to both identify the user and query \
         #: for more information about the user
-        self.id: Optional[str] = None  # pylint: disable=invalid-name
+        self.id: str | None = None
         #: Base64-encoded HMAC-SHA256 signature signed with the consumer’s \
         #: private key containing the concatenated ID and issued_at. Use to \
         #: verify that the identity URL hasn’t changed since the server sent it
-        self.signature: Optional[str] = None
+        self.signature: str | None = None
         #: Timestamp when the signature was created
-        self.issued_at: Optional[str] = None
+        self.issued_at: str | None = None
         #: Function for JSON serialization
         self.json_dumps = json_dumps
         #: Function for JSON deserialization
@@ -77,13 +77,14 @@ class AuthenticatorBase(AuthExtension):
         the method is called without authenticating first.
         """
         if self.token_type is None or self.access_token is None:
-            raise AuthenticationError("Unknown token_type and access_token "
-                                      "values. Method called without "
-                                      "authenticating first.")
+            raise AuthenticationError(
+                "Unknown token_type and access_token "
+                "values. Method called without "
+                "authenticating first."
+            )
         headers["Authorization"] = self.token_type + " " + self.access_token
 
-    async def incoming(self, payload: Payload,
-                       headers: Optional[Headers] = None) -> None:
+    async def incoming(self, payload: Payload, headers: Headers | None = None) -> None:
         pass
 
     async def authenticate(self) -> None:
@@ -109,7 +110,7 @@ class AuthenticatorBase(AuthExtension):
         self.__dict__.update(response_data)
 
     @abstractmethod
-    async def _authenticate(self) -> Tuple[int, JsonObject]:
+    async def _authenticate(self) -> tuple[int, JsonObject]:
         """Authenticate the user
 
         :return: The status code and response data from the server's response
@@ -117,16 +118,20 @@ class AuthenticatorBase(AuthExtension):
         occurs
         """
 
-# pylint: enable=too-many-instance-attributes
-# pylint: disable=too-many-arguments
-
 
 class PasswordAuthenticator(AuthenticatorBase):
     """Authenticator for using the OAuth 2.0 Username-Password Flow"""
-    def __init__(self, consumer_key: str, consumer_secret: str,
-                 username: str, password: str, sandbox: bool = False,
-                 json_dumps: JsonDumper = json.dumps,
-                 json_loads: JsonLoader = json.loads) -> None:
+
+    def __init__(
+        self,
+        consumer_key: str,
+        consumer_secret: str,
+        username: str,
+        password: str,
+        sandbox: bool = False,
+        json_dumps: JsonDumper = json.dumps,
+        json_loads: JsonLoader = json.loads,
+    ) -> None:
         """
         :param consumer_key: Consumer key from the Salesforce connected \
         app definition
@@ -141,9 +146,7 @@ class PasswordAuthenticator(AuthenticatorBase):
         :param json_loads: Function for JSON deserialization, the default is \
         :func:`json.loads`
         """
-        super().__init__(sandbox=sandbox,
-                         json_dumps=json_dumps,
-                         json_loads=json_loads)
+        super().__init__(sandbox=sandbox, json_dumps=json_dumps, json_loads=json_loads)
         #: OAuth2 client id
         self.client_id = consumer_key
         #: OAuth2 client secret
@@ -156,19 +159,21 @@ class PasswordAuthenticator(AuthenticatorBase):
     def __repr__(self) -> str:
         """Formal string representation"""
         cls_name = type(self).__name__
-        return f"{cls_name}(consumer_key={reprlib.repr(self.client_id)}," \
-               f"consumer_secret={reprlib.repr(self.client_secret)}, " \
-               f"username={reprlib.repr(self.username)}, " \
-               f"password={reprlib.repr(self.password)})"
+        return (
+            f"{cls_name}(consumer_key={reprlib.repr(self.client_id)},"
+            f"consumer_secret={reprlib.repr(self.client_secret)}, "
+            f"username={reprlib.repr(self.username)}, "
+            f"password={reprlib.repr(self.password)})"
+        )
 
-    async def _authenticate(self) -> Tuple[int, JsonObject]:
+    async def _authenticate(self) -> tuple[int, JsonObject]:
         async with ClientSession(json_serialize=self.json_dumps) as session:
             data = {
                 "grant_type": "password",
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
                 "username": self.username,
-                "password": self.password
+                "password": self.password,
             }
             response = await session.post(self._token_url, data=data)
             response_data = await response.json(loads=self.json_loads)
@@ -177,10 +182,16 @@ class PasswordAuthenticator(AuthenticatorBase):
 
 class RefreshTokenAuthenticator(AuthenticatorBase):
     """Authenticator for using the OAuth 2.0 Refresh Token Flow"""
-    def __init__(self, consumer_key: str, consumer_secret: str,
-                 refresh_token: str, sandbox: bool = False,
-                 json_dumps: JsonDumper = json.dumps,
-                 json_loads: JsonLoader = json.loads) -> None:
+
+    def __init__(
+        self,
+        consumer_key: str,
+        consumer_secret: str,
+        refresh_token: str,
+        sandbox: bool = False,
+        json_dumps: JsonDumper = json.dumps,
+        json_loads: JsonLoader = json.loads,
+    ) -> None:
         """
         :param consumer_key: Consumer key from the Salesforce connected \
         app definition
@@ -196,9 +207,7 @@ class RefreshTokenAuthenticator(AuthenticatorBase):
         :param json_loads: Function for JSON deserialization, the default is \
         :func:`json.loads`
         """
-        super().__init__(sandbox=sandbox,
-                         json_dumps=json_dumps,
-                         json_loads=json_loads)
+        super().__init__(sandbox=sandbox, json_dumps=json_dumps, json_loads=json_loads)
         #: OAuth2 client id
         self.client_id = consumer_key
         #: OAuth2 client secret
@@ -209,17 +218,19 @@ class RefreshTokenAuthenticator(AuthenticatorBase):
     def __repr__(self) -> str:
         """Formal string representation"""
         cls_name = type(self).__name__
-        return f"{cls_name}(consumer_key={reprlib.repr(self.client_id)}," \
-               f"consumer_secret={reprlib.repr(self.client_secret)}, " \
-               f"refresh_token={reprlib.repr(self.refresh_token)})"
+        return (
+            f"{cls_name}(consumer_key={reprlib.repr(self.client_id)},"
+            f"consumer_secret={reprlib.repr(self.client_secret)}, "
+            f"refresh_token={reprlib.repr(self.refresh_token)})"
+        )
 
-    async def _authenticate(self) -> Tuple[int, JsonObject]:
+    async def _authenticate(self) -> tuple[int, JsonObject]:
         async with ClientSession(json_serialize=self.json_dumps) as session:
             data = {
                 "grant_type": "refresh_token",
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
-                "refresh_token": self.refresh_token
+                "refresh_token": self.refresh_token,
             }
             response = await session.post(self._token_url, data=data)
             response_data = await response.json(loads=self.json_loads)
@@ -236,10 +247,15 @@ class ClientCredentialsAuthenticator(AuthenticatorBase):
     Salesforce only issues client credentials tokens from an org's My Domain \
     host, so *domain* is required, and ``login`` and ``test`` are rejected.
     """
-    def __init__(self, consumer_key: str, consumer_secret: str,
-                 domain: str,
-                 json_dumps: JsonDumper = json.dumps,
-                 json_loads: JsonLoader = json.loads) -> None:
+
+    def __init__(
+        self,
+        consumer_key: str,
+        consumer_secret: str,
+        domain: str,
+        json_dumps: JsonDumper = json.dumps,
+        json_loads: JsonLoader = json.loads,
+    ) -> None:
         """
         :param consumer_key: Consumer key from the Salesforce external \
         client app or connected app definition
@@ -277,17 +293,20 @@ class ClientCredentialsAuthenticator(AuthenticatorBase):
         """
         value = domain.strip().strip("/")
         if not value:
-            raise ValueError("domain is required for the client "
-                             "credentials flow")
+            raise ValueError("domain is required for the client credentials flow")
         if "://" in value:
-            raise ValueError("domain must be a bare My Domain name, "
-                             f"not a URL: {domain!r}")
+            raise ValueError(
+                f"domain must be a bare My Domain name, not a URL: {domain!r}"
+            )
         if value.endswith(".salesforce.com"):
-            raise ValueError("domain must not carry the .salesforce.com "
-                             f"suffix: {domain!r}")
+            raise ValueError(
+                f"domain must not carry the .salesforce.com suffix: {domain!r}"
+            )
         if value in ("login", "test"):
-            raise ValueError("the client credentials flow requires an "
-                             f"org's My Domain host, not {value!r}")
+            raise ValueError(
+                "the client credentials flow requires an "
+                f"org's My Domain host, not {value!r}"
+            )
         return value
 
     @property
@@ -298,20 +317,19 @@ class ClientCredentialsAuthenticator(AuthenticatorBase):
     def __repr__(self) -> str:
         """Formal string representation"""
         cls_name = type(self).__name__
-        return f"{cls_name}(consumer_key={reprlib.repr(self.client_id)}, " \
-               f"consumer_secret={reprlib.repr(self.client_secret)}, " \
-               f"domain={reprlib.repr(self.domain)})"
+        return (
+            f"{cls_name}(consumer_key={reprlib.repr(self.client_id)}, "
+            f"consumer_secret={reprlib.repr(self.client_secret)}, "
+            f"domain={reprlib.repr(self.domain)})"
+        )
 
-    async def _authenticate(self) -> Tuple[int, JsonObject]:
+    async def _authenticate(self) -> tuple[int, JsonObject]:
         async with ClientSession(json_serialize=self.json_dumps) as session:
             data = {
                 "grant_type": "client_credentials",
                 "client_id": self.client_id,
-                "client_secret": self.client_secret
+                "client_secret": self.client_secret,
             }
             response = await session.post(self._token_url, data=data)
             response_data = await response.json(loads=self.json_loads)
             return response.status, response_data
-
-
-# pylint: enable=too-many-arguments

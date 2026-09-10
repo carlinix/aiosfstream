@@ -1,17 +1,44 @@
 """Salesforce Streaming API client for asyncio"""
-import logging
 
-from aiosfstream._metadata import VERSION as __version__  # noqa: F401
-from aiosfstream.client import Client, SalesforceStreamingClient  # noqa: F401
-from aiosfstream.client import ReplayMarkerStoragePolicy  # noqa: F401
-from aiosfstream.auth import PasswordAuthenticator  # noqa: F401
-from aiosfstream.auth import RefreshTokenAuthenticator  # noqa: F401
-from aiosfstream.auth import ClientCredentialsAuthenticator  # noqa: F401
-from aiosfstream.replay import ReplayMarker, ReplayOption  # noqa: F401
-from aiosfstream.replay import MappingStorage  # noqa: F401
-from aiosfstream.replay import DefaultMappingStorage  # noqa: F401
-from aiosfstream.replay import ConstantReplayId  # noqa: F401
-from aiosfstream.replay import ReplayMarkerStorage  # noqa: F401
+import logging
+from importlib.metadata import version as distribution_version
+
+from aiosfstream.auth import (
+    ClientCredentialsAuthenticator,
+    PasswordAuthenticator,
+    RefreshTokenAuthenticator,
+)
+from aiosfstream.client import (
+    Client,
+    ReplayMarkerStoragePolicy,
+    SalesforceStreamingClient,
+)
+from aiosfstream.replay import (
+    ConstantReplayId,
+    DefaultMappingStorage,
+    MappingStorage,
+    ReplayMarker,
+    ReplayMarkerStorage,
+    ReplayOption,
+)
+
+__version__ = distribution_version("aiosfstream")
+
+__all__ = [
+    "Client",
+    "ClientCredentialsAuthenticator",
+    "ConstantReplayId",
+    "DefaultMappingStorage",
+    "MappingStorage",
+    "PasswordAuthenticator",
+    "RefreshTokenAuthenticator",
+    "ReplayMarker",
+    "ReplayMarkerStorage",
+    "ReplayMarkerStoragePolicy",
+    "ReplayOption",
+    "SalesforceStreamingClient",
+    "__version__",
+]
 
 # Create a default handler to avoid warnings in applications without logging
 # configuration

@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/develop' }}
+
+env:
+  FORCE_COLOR: "1"
+  UV_FROZEN: "1"
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          version: "0.12.2"
+      - name: Install Python
+        run: uv python install 3.13
+      - name: Install lint dependencies
+        run: uv sync --no-default-groups --group lint --python 3.13
+      - name: Lint
+        run: uv run --no-sync ruff check --output-format=github .
+      - name: Check formatting
+        run: uv run --no-sync ruff format --check .
+
+  test:
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          version: "0.12.2"
+      - name: Install Python
+        run: uv python install ${{ matrix.python-version }}
+      - name: Install test dependencies
+        run: >-
+          uv sync --no-default-groups --group test
+          --python ${{ matrix.python-version }}
+      - name: Run tests
+        run: >-
+          uv run --no-sync --python ${{ matrix.python-version }}
+          coverage run -m pytest
+      - name: Report coverage
+        run: >-
+          uv run --no-sync --python ${{ matrix.python-version }}
+          coverage report
+      - name: Write coverage XML
+        if: matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13'
+        run: uv run --no-sync --python 3.13 coverage xml
+      - name: Upload coverage artifact
+        if: matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.13'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          version: "0.12.2"
+      - name: Install Python
+        run: uv python install 3.13
+      - name: Install documentation dependencies
+        run: uv sync --no-default-groups --group docs --python 3.13
+      - name: Build documentation
+        run: >-
+          uv run --no-sync sphinx-build -E -W --keep-going
+          -b html docs/source docs/build/html
+
+  build:
+    name: Build and validate distributions
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          version: "0.12.2"
+      - name: Install Python
+        run: uv python install 3.13
+      - name: Install build dependencies
+        run: >-
+          uv sync --no-default-groups --group build --group docs --python 3.13
+      - name: Build distributions
+        run: uv build --no-sources
+      - name: Validate metadata
+        run: uv run --no-sync twine check --strict dist/*
+      - name: Validate wheel contents
+        run: uv run --no-sync check-wheel-contents dist/*.whl
+      - name: Build documentation from source distribution
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir -p extracted-sdist
+          tar -xzf "$GITHUB_WORKSPACE"/dist/*.tar.gz -C extracted-sdist
+          uv run --project "$GITHUB_WORKSPACE" --no-sync sphinx-build -E -W --keep-going -b html extracted-sdist/*/docs/source sdist-docs
+      - name: Smoke-test the installed wheel
+        working-directory: ${{ runner.temp }}
+        run: |
+          uv venv smoke --python 3.13
+          uv pip install --python smoke "aiocometd @ git+https://github.com/carlinix/aiocometd.git@8c4077b57f44266e3263d57ba762a97e6a25c328"
+          uv pip install --python smoke "$GITHUB_WORKSPACE"/dist/*.whl
+          uv run --python smoke --no-project python -c "import aiosfstream as package; print('import OK, version', package.__version__)"
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

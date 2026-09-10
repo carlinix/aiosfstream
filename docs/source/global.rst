@@ -1,5 +1,5 @@
 .. _aiohttp: https://github.com/aio-libs/aiohttp/
-.. _aiocometd: https://github.com/robertmrk/aiocometd/
+.. _aiocometd: https://github.com/carlinix/aiocometd/
 .. _asyncio: https://docs.python.org/3/library/asyncio.html
 .. _api: https://developer.salesforce.com/docs/atlas.en-us.api_streaming.meta/api_streaming/intro_stream.htm
 .. _PushTopic: https://developer.salesforce.com/docs/atlas.en-us.api_streaming.meta/api_streaming/working_with_pushtopics.htm

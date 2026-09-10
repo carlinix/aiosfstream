@@ -13,19 +13,18 @@ Exception hierarchy::
         ServerError
         ReplayError
 """
-from functools import wraps
-import asyncio
+
 import contextlib
-from typing import Generator, Callable, TypeVar, Any, cast
+import inspect
+from collections.abc import Callable, Generator
+from functools import wraps
+from typing import Any, TypeVar, cast
 
 import aiocometd.exceptions as cometd_exc
 
-
 FuncType = Callable[..., Any]
-Func = TypeVar('Func', bound=FuncType)
+Func = TypeVar("Func", bound=FuncType)
 
-
-# pylint: disable=too-many-ancestors
 
 class AiosfstreamException(cometd_exc.AiocometdException):
     """Base exception type.
@@ -42,24 +41,20 @@ class TransportError(AiosfstreamException, cometd_exc.TransportError):
     """Error during the transportation of messages"""
 
 
-class TransportInvalidOperation(TransportError,
-                                cometd_exc.TransportInvalidOperation):
+class TransportInvalidOperation(TransportError, cometd_exc.TransportInvalidOperation):
     """The requested operation can't be executed on the current state of the
     transport"""
 
 
-class TransportTimeoutError(TransportError,
-                            cometd_exc.TransportTimeoutError):
+class TransportTimeoutError(TransportError, cometd_exc.TransportTimeoutError):
     """Transport timeout"""
 
 
-class TransportConnectionClosed(TransportError,
-                                cometd_exc.TransportConnectionClosed):
+class TransportConnectionClosed(TransportError, cometd_exc.TransportConnectionClosed):
     """The connection unexpectedly closed"""
 
 
-class ServerError(AiosfstreamException,
-                  cometd_exc.ServerError):
+class ServerError(AiosfstreamException, cometd_exc.ServerError):
     """Streaming API server side error
 
     If the *response* contains an error field it gets parsed
@@ -71,21 +66,17 @@ class ServerError(AiosfstreamException,
     """
 
 
-class ClientError(AiosfstreamException,
-                  cometd_exc.ClientError):
+class ClientError(AiosfstreamException, cometd_exc.ClientError):
     """Client side error"""
 
 
-class ClientInvalidOperation(ClientError,
-                             cometd_exc.ClientInvalidOperation):
+class ClientInvalidOperation(ClientError, cometd_exc.ClientInvalidOperation):
     """The requested operation can't be executed on the current state of the
     client"""
 
 
 class ReplayError(AiosfstreamException):
     """Message replay related error"""
-
-# pylint: enable=too-many-ancestors
 
 
 EXCEPTION_PAIRS = {
@@ -96,7 +87,7 @@ EXCEPTION_PAIRS = {
     cometd_exc.TransportConnectionClosed: TransportConnectionClosed,
     cometd_exc.ServerError: ServerError,
     cometd_exc.ClientError: ClientError,
-    cometd_exc.ClientInvalidOperation: ClientInvalidOperation
+    cometd_exc.ClientInvalidOperation: ClientInvalidOperation,
 }
 
 
@@ -107,8 +98,8 @@ def translate_errors_context() -> Generator[None, None, None]:
 
     As every properly behaving library, aiosfstream uses its own exception
     hierarchy, just as aiocometd does. The problem is that for the users of
-    the library, it can be very confusing to deal with more then a single
-    exception hierarchy, so aiocometd exceptions should be tranlated to
+    the library, it can be very confusing to deal with more than a single
+    exception hierarchy, so aiocometd exceptions should be translated to
     aiosfstream exceptions. (unfortunately we can't make aiosfstream exceptions
     the virtual base class of aiocometd exceptions, since exception handling
     only looks at the __mro__ to find the base class, we have no choice but to
@@ -130,17 +121,13 @@ def translate_errors(func: Func) -> Func:
     :param func: Function or coroutine function
     :return: The wrapped function
     """
-    if not asyncio.iscoroutinefunction(func):
+    if not inspect.iscoroutinefunction(func):
         # for non coroutine functions use the context manager as a decorator
-        # pylint: disable=not-callable
         return cast(Func, translate_errors_context()(func))
-        # pylint: enable=not-callable
 
-    # pylint: disable=missing-docstring
     @wraps(func)
     async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
         with translate_errors_context():
             return await func(*args, **kwargs)
 
-    # pylint: enable=missing-docstring
     return cast(Func, async_wrapper)

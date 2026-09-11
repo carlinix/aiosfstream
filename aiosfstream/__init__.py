@@ -8,6 +8,7 @@ from aiosfstream.auth import (
     JWTBearerAuthenticator,
     PasswordAuthenticator,
     RefreshTokenAuthenticator,
+    SOAPAuthenticator,
 )
 from aiosfstream.client import (
     Client,
@@ -38,6 +39,7 @@ __all__ = [
     "ReplayMarkerStorage",
     "ReplayMarkerStoragePolicy",
     "ReplayOption",
+    "SOAPAuthenticator",
     "SalesforceStreamingClient",
     "__version__",
 ]

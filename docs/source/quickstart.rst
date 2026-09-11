@@ -101,16 +101,58 @@ parameter. Unlike the username-password flow, no suffix has to be added to
 the username: ``username`` names the sandbox user directly, and sandbox
 usernames already carry the name of their sandbox.
 
+SOAP authentication
+~~~~~~~~~~~~~~~~~~~
+
+.. warning::
+
+    Salesforce deprecated the SOAP API's `login() <soap_login_>`_ call in the
+    Spring '26 release and removes it from API versions 31.0 through 64.0 in
+    Summer '27. Use it only when a `Connected App <connected_app_>`_ is out of
+    reach, and plan the migration to another flow.
+
+:py:obj:`SOAPAuthenticator` exchanges a username and a password for a session
+ID, which the Streaming API accepts in place of an access token. Unlike every
+other authenticator, it needs no consumer key and no consumer secret, which is
+the one reason to choose it:
+
+.. code-block:: python
+
+    auth = SOAPAuthenticator(
+        username="<username>",
+        password="<password>",
+        security_token="<security token>"
+    )
+    client = Client(auth)
+
+The security token is required unless the caller's IP falls inside the trusted
+IP range of the user's profile. It is appended to the password, which is what
+the SOAP endpoint expects, so it is passed as its own parameter rather than
+concatenated by hand.
+
+To log in against an org's My Domain host instead of ``login.salesforce.com``,
+pass the bare domain name with the ``domain`` parameter:
+
+.. code-block:: python
+
+    auth = SOAPAuthenticator(
+        username="<username>",
+        password="<password>",
+        security_token="<security token>",
+        domain="mycompany.my"
+    )
+
 Authentication on sandbox orgs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you're trying to connect to a sandbox org, then you have to assign
 ``True`` to the ``sandbox`` parameter when creating the
-:py:obj:`SalesforceStreamingClient`, :py:obj:`PasswordAuthenticator` or
-:py:obj:`RefreshTokenAuthenticator` object. Furthermore, the name of the
-sandbox should be appended to the username. For example, if a username for a
-production org is user1@acme.com, and the sandbox is named `test`, the modified
-username to log in to the sandbox is user1@acme.com.test.
+:py:obj:`SalesforceStreamingClient`, :py:obj:`PasswordAuthenticator`,
+:py:obj:`RefreshTokenAuthenticator` or :py:obj:`SOAPAuthenticator` object.
+Furthermore, the name of the sandbox should be appended to the username. For
+example, if a username for a production org is user1@acme.com, and the sandbox
+is named `test`, the modified username to log in to the sandbox is
+user1@acme.com.test.
 
 .. code-block:: python
 

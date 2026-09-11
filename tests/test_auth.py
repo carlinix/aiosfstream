@@ -2,6 +2,7 @@ import reprlib
 import time
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
+from xml.etree import ElementTree
 
 import jwt
 import pytest
@@ -14,14 +15,18 @@ from aiosfstream.auth import (
     JWT_ALGORITHM,
     JWT_BEARER_GRANT_TYPE,
     JWT_EXPIRATION,
+    LOGIN_DOMAIN,
     SANDBOX_AUDIENCE_URL,
+    SANDBOX_LOGIN_DOMAIN,
     SANDBOX_TOKEN_URL,
+    SOAP_API_VERSION,
     TOKEN_URL,
     AuthenticatorBase,
     ClientCredentialsAuthenticator,
     JWTBearerAuthenticator,
     PasswordAuthenticator,
     RefreshTokenAuthenticator,
+    SOAPAuthenticator,
 )
 from aiosfstream.exceptions import AuthenticationError
 
@@ -736,3 +741,308 @@ def test_jwt_repr_hides_the_private_key(jwt_auth):
     )
     assert "PRIVATE KEY" not in result
     assert PRIVATE_KEY.splitlines()[1][:16] not in result
+
+
+# ---------------------------------------------------------------------
+#  SOAPAuthenticator tests
+# ---------------------------------------------------------------------
+
+LOGIN_RESPONSE = """<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns="urn:partner.soap.sforce.com"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Body>
+    <loginResponse>
+      <result>
+        <metadataServerUrl>https://mycompany.my.salesforce.com/services/Soap/m/59.0/00D0EAA</metadataServerUrl>
+        <passwordExpired>false</passwordExpired>
+        <sandbox>false</sandbox>
+        <serverUrl>https://mycompany.my.salesforce.com/services/Soap/u/59.0/00D0EAA</serverUrl>
+        <sessionId>00D000000000000!AQ4AQExample</sessionId>
+        <userId>005000000000000AAA</userId>
+      </result>
+    </loginResponse>
+  </soapenv:Body>
+</soapenv:Envelope>"""
+
+LOGIN_FAULT = """<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:sf="urn:fault.partner.soap.sforce.com"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Body>
+    <soapenv:Fault>
+      <faultcode>sf:INVALID_LOGIN</faultcode>
+      <faultstring>INVALID_LOGIN: Invalid username, password,
+        security token; or user locked out.</faultstring>
+      <detail>
+        <sf:LoginFault xsi:type="sf:LoginFault">
+          <sf:exceptionCode>INVALID_LOGIN</sf:exceptionCode>
+          <sf:exceptionMessage>Invalid username, password,
+            security token; or user locked out.</sf:exceptionMessage>
+        </sf:LoginFault>
+      </detail>
+    </soapenv:Fault>
+  </soapenv:Body>
+</soapenv:Envelope>"""
+
+
+def soap_session(mock_session, body=LOGIN_RESPONSE, status=HTTPStatus.OK):
+    response_obj = MagicMock()
+    response_obj.text = AsyncMock(return_value=body)
+    response_obj.status = status
+
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock()
+    session.post = AsyncMock(return_value=response_obj)
+    mock_session.return_value = session
+    return session
+
+
+@pytest.fixture
+def soap_auth():
+    return SOAPAuthenticator(username="user@acme.com", password="password")
+
+
+def test_soap_init(soap_auth):
+    assert soap_auth.username == "user@acme.com"
+    assert soap_auth.password == "password"
+    assert soap_auth.security_token == ""
+    assert soap_auth.domain == LOGIN_DOMAIN
+    assert soap_auth.access_token is None
+
+
+def test_soap_login_url(soap_auth):
+    assert soap_auth._token_url == (
+        f"https://login.salesforce.com/services/Soap/u/{SOAP_API_VERSION}"
+    )
+
+
+def test_soap_sandbox_login_url():
+    auth = SOAPAuthenticator(username="user@acme.com.uat", password="p", sandbox=True)
+    assert auth.domain == SANDBOX_LOGIN_DOMAIN
+    assert auth._token_url == (
+        f"https://test.salesforce.com/services/Soap/u/{SOAP_API_VERSION}"
+    )
+
+
+def test_soap_explicit_domain_wins_over_sandbox():
+    auth = SOAPAuthenticator(
+        username="user@acme.com",
+        password="p",
+        domain="mycompany.my",
+        sandbox=True,
+    )
+    assert auth._token_url == (
+        f"https://mycompany.my.salesforce.com/services/Soap/u/{SOAP_API_VERSION}"
+    )
+
+
+def test_soap_strips_trailing_slash():
+    auth = SOAPAuthenticator(
+        username="user@acme.com", password="p", domain="  mycompany.my/ "
+    )
+    assert auth.domain == "mycompany.my"
+
+
+@pytest.mark.parametrize("domain", ["", "   ", "/"])
+def test_soap_rejects_empty_domain(domain):
+    with pytest.raises(ValueError, match="must not be empty"):
+        SOAPAuthenticator(username="u", password="p", domain=domain)
+
+
+def test_soap_rejects_url_domain():
+    with pytest.raises(ValueError, match="not a URL"):
+        SOAPAuthenticator(
+            username="u", password="p", domain="https://mycompany.my.salesforce.com"
+        )
+
+
+def test_soap_rejects_salesforce_com_suffix():
+    with pytest.raises(ValueError, match="salesforce.com"):
+        SOAPAuthenticator(
+            username="u", password="p", domain="mycompany.my.salesforce.com"
+        )
+
+
+def test_soap_envelope_appends_the_security_token(soap_auth):
+    soap_auth.security_token = "XyZ123"
+
+    envelope = soap_auth._create_envelope()
+
+    assert "<n1:password>passwordXyZ123</n1:password>" in envelope
+    assert "<n1:username>user@acme.com</n1:username>" in envelope
+
+
+def test_soap_envelope_escapes_credentials():
+    """A password holding & or < would otherwise produce malformed XML."""
+    auth = SOAPAuthenticator(
+        username="a&b@acme.com", password="p<a>ss&", security_token="t&t"
+    )
+
+    envelope = auth._create_envelope()
+
+    assert "<n1:username>a&amp;b@acme.com</n1:username>" in envelope
+    assert "<n1:password>p&lt;a&gt;ss&amp;t&amp;t</n1:password>" in envelope
+    ElementTree.fromstring(envelope)
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_authenticate_sends_the_envelope(mock_session, soap_auth):
+    session = soap_session(mock_session)
+
+    status, data = await soap_auth._authenticate()
+
+    assert status == HTTPStatus.OK
+    assert data["access_token"] == "00D000000000000!AQ4AQExample"
+    (url,) = session.post.await_args.args
+    assert url == soap_auth._token_url
+    assert (
+        session.post.await_args.kwargs["data"] == soap_auth._create_envelope().encode()
+    )
+    headers = session.post.await_args.kwargs["headers"]
+    assert headers["SOAPAction"] == "login"
+    assert headers["Content-Type"] == "text/xml; charset=UTF-8"
+    session.__aenter__.assert_awaited()
+    session.__aexit__.assert_awaited()
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_populates_the_session(mock_session, soap_auth):
+    """instance_url is the origin of serverUrl, not the whole endpoint."""
+    soap_session(mock_session)
+
+    await soap_auth.authenticate()
+
+    assert soap_auth.access_token == "00D000000000000!AQ4AQExample"
+    assert soap_auth.token_type == "Bearer"
+    assert soap_auth.instance_url == "https://mycompany.my.salesforce.com"
+
+    headers = {}
+    await soap_auth.outgoing([], headers)
+    assert headers["Authorization"] == "Bearer 00D000000000000!AQ4AQExample"
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_translates_a_fault(mock_session, soap_auth):
+    soap_session(
+        mock_session, body=LOGIN_FAULT, status=HTTPStatus.INTERNAL_SERVER_ERROR
+    )
+
+    status, data = await soap_auth._authenticate()
+
+    assert status == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert data["error"] == "INVALID_LOGIN"
+    assert "Invalid username" in data["error_description"]
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_fault_raises_and_clears_the_session(mock_session, soap_auth):
+    soap_auth.access_token = "stale"
+    soap_auth.token_type = "Bearer"
+    soap_session(
+        mock_session, body=LOGIN_FAULT, status=HTTPStatus.INTERNAL_SERVER_ERROR
+    )
+
+    with pytest.raises(AuthenticationError, match="Authentication failed"):
+        await soap_auth.authenticate()
+
+    assert soap_auth.access_token is None
+    assert soap_auth.token_type is None
+    assert soap_auth.instance_url is None
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_fault_without_detail_falls_back_to_faultstring(
+    mock_session, soap_auth
+):
+    body = (
+        "<soapenv:Envelope xmlns:soapenv="
+        '"http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>'
+        "<soapenv:Fault><faultcode>soapenv:Client</faultcode>"
+        "<faultstring>content type not allowed</faultstring>"
+        "</soapenv:Fault></soapenv:Body></soapenv:Envelope>"
+    )
+    soap_session(mock_session, body=body, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    _, data = await soap_auth._authenticate()
+
+    assert data["error"] == "unknown_error"
+    assert data["error_description"] == "content type not allowed"
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_ok_without_a_session_clears_and_raises(mock_session, soap_auth):
+    """A 200 that carries no sessionId must not leave a stale session behind."""
+    soap_auth.access_token = "stale"
+    soap_auth.token_type = "Bearer"
+    body = (
+        "<soapenv:Envelope xmlns:soapenv="
+        '"http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>'
+        "<loginResponse><result/></loginResponse>"
+        "</soapenv:Body></soapenv:Envelope>"
+    )
+    soap_session(mock_session, body=body)
+
+    with pytest.raises(AuthenticationError, match="carries no session"):
+        await soap_auth.authenticate()
+
+    assert soap_auth.access_token is None
+    assert soap_auth.token_type is None
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_non_xml_response_clears_and_raises(mock_session, soap_auth):
+    soap_auth.access_token = "stale"
+    # An HTML error page from a proxy in front of the org: not well formed,
+    # because of the unclosed <br>.
+    soap_session(mock_session, body="<html><body>502 Bad Gateway<br></body></html>")
+
+    with pytest.raises(AuthenticationError, match="not valid XML"):
+        await soap_auth.authenticate()
+
+    assert soap_auth.access_token is None
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_network_error(mock_session, soap_auth):
+    mock_session.side_effect = ClientError()
+
+    with pytest.raises(AuthenticationError, match="Network request failed"):
+        await soap_auth.authenticate()
+
+
+def test_soap_repr_hides_the_password():
+    auth = SOAPAuthenticator(
+        username="user@acme.com", password="s3cret", security_token="XyZ123"
+    )
+
+    result = repr(auth)
+
+    assert result == (
+        f"SOAPAuthenticator(username={reprlib.repr(auth.username)}, "
+        f"domain={reprlib.repr(auth.domain)})"
+    )
+    assert "s3cret" not in result
+    assert "XyZ123" not in result
+
+
+@pytest.mark.asyncio
+@patch("aiosfstream.auth.ClientSession")
+async def test_soap_keeps_api_inside_the_host(mock_session, soap_auth):
+    """simple-salesforce's unanchored "-api" strip would corrupt this host."""
+    soap_session(mock_session, body=LOGIN_RESPONSE.replace("mycompany", "acme-apidev"))
+
+    await soap_auth.authenticate()
+
+    assert soap_auth.instance_url == "https://acme-apidev.my.salesforce.com"

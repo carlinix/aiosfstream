@@ -194,6 +194,80 @@ def test_password_repr(password_auth):
     )
 
 
+def test_password_default_token_url(password_auth):
+    assert password_auth.domain == LOGIN_DOMAIN
+    assert password_auth._token_url == TOKEN_URL
+
+
+def test_password_sandbox_token_url():
+    auth = PasswordAuthenticator(
+        consumer_key="id",
+        consumer_secret="secret",
+        username="u",
+        password="p",
+        sandbox=True,
+    )
+    assert auth.domain == SANDBOX_LOGIN_DOMAIN
+    assert auth._token_url == SANDBOX_TOKEN_URL
+
+
+@pytest.mark.parametrize(
+    ("domain", "url"),
+    [
+        ("login", TOKEN_URL),
+        ("test", SANDBOX_TOKEN_URL),
+        ("mycompany.my", "https://mycompany.my.salesforce.com/services/oauth2/token"),
+        (
+            " mycompany.my/ ",
+            "https://mycompany.my.salesforce.com/services/oauth2/token",
+        ),
+    ],
+)
+def test_password_explicit_domain(domain, url):
+    auth = PasswordAuthenticator(
+        consumer_key="id",
+        consumer_secret="secret",
+        username="u",
+        password="p",
+        domain=domain,
+    )
+    assert auth._token_url == url
+
+
+def test_password_explicit_domain_wins_over_sandbox():
+    auth = PasswordAuthenticator(
+        consumer_key="id",
+        consumer_secret="secret",
+        username="u",
+        password="p",
+        sandbox=True,
+        domain="mycompany.my",
+    )
+    assert (
+        auth._token_url == "https://mycompany.my.salesforce.com/services/oauth2/token"
+    )
+
+
+@pytest.mark.parametrize(
+    ("domain", "message"),
+    [
+        ("", "must not be empty"),
+        ("   ", "must not be empty"),
+        ("https://mycompany.my.salesforce.com", "not a URL"),
+        ("mycompany.my.salesforce.com", "salesforce.com"),
+    ],
+)
+def test_password_rejects_invalid_domain(domain, message):
+    with pytest.raises(ValueError, match=message):
+        PasswordAuthenticator(
+            consumer_key="id",
+            consumer_secret="secret",
+            username="u",
+            password="p",
+            domain=domain,
+        )
+
+
 # ---------------------------------------------------------------------
 #  RefreshTokenAuthenticator tests
 # ---------------------------------------------------------------------

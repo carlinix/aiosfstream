@@ -1,6 +1,15 @@
 Changelog
 =========
 
+1.4.0 (2026-09-11)
+------------------
+
+- Add a ``domain`` parameter to ``PasswordAuthenticator``, so the
+  username-password flow can request tokens from ``login``, ``test``, or an
+  org's My Domain host. It follows the same rules as ``SOAPAuthenticator``:
+  omitting it keeps the ``sandbox`` flag's behaviour, and an explicit value
+  wins over ``sandbox``.
+
 1.3.0 (2026-09-10)
 ------------------
 

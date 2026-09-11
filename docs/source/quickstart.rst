@@ -164,6 +164,21 @@ user1@acme.com.test.
         sandbox=True
     )
 
+:py:obj:`PasswordAuthenticator` and :py:obj:`SOAPAuthenticator` also accept a
+``domain`` parameter naming the login host directly: ``login``, ``test``, or
+an org's My Domain such as ``mycompany.my``, without a scheme and without the
+``.salesforce.com`` suffix. An explicit ``domain`` wins over ``sandbox``.
+
+.. code-block:: python
+
+    auth = PasswordAuthenticator(
+        consumer_key="<consumer key>",
+        consumer_secret="<consumer secret>",
+        username="<username>",
+        password="<password>",
+        domain="mycompany.my"
+    )
+
 Connecting
 ----------
 

@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "aiosfstream"
-version = "1.3.0"
+version = "1.4.0"
 description = "Salesforce Streaming API client for asyncio"
 readme = "README.rst"
 requires-python = ">=3.11"
